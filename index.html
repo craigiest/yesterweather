@@ -415,11 +415,11 @@ const UNIT_OPTS = {
 };
 const UNIT_PRESETS = {
   us: { temp: 'F', wind: 'mph', precip: 'in', pressure: 'inHg', distance: 'mi' },
-  si: { temp: 'C', wind: 'ms', precip: 'mm', pressure: 'hPa', distance: 'km' }
+  metric: { temp: 'C', wind: 'kmh', precip: 'mm', pressure: 'hPa', distance: 'km' }   // common public-forecast metric units
 };
 function loadUnits() {
   const saved = store.get('yw.unitset', null), old = store.get('yw.units', 'us');
-  const u = Object.assign({}, UNIT_PRESETS[old === 'si' ? 'si' : 'us']);
+  const u = Object.assign({}, UNIT_PRESETS[old === 'si' ? 'metric' : 'us']);
   if (saved && typeof saved === 'object') Object.keys(UNIT_OPTS).forEach(k => { if (UNIT_OPTS[k].opts.some(o => o[0] === saved[k])) u[k] = saved[k]; });
   return u;
 }
@@ -1539,7 +1539,7 @@ function drawUnitsMenu() {
   pop.innerHTML = `<div class="units-panel" role="dialog" aria-label="Units">
     <div class="units-row"><span>Presets</span><div class="seg">
       <button type="button" data-preset="us" class="${preset === 'us' ? 'on' : ''}">US</button>
-      <button type="button" data-preset="si" class="${preset === 'si' ? 'on' : ''}">SI</button></div></div>`
+      <button type="button" data-preset="metric" class="${preset === 'metric' ? 'on' : ''}">Metric</button></div></div>`
     + Object.keys(UNIT_OPTS).map(k => `<div class="units-row"><span>${UNIT_OPTS[k].label}</span><div class="seg" role="group" aria-label="${UNIT_OPTS[k].label}">`
       + UNIT_OPTS[k].opts.map(([v, l]) => `<button type="button" data-k="${k}" data-v="${v}" class="${U()[k] === v ? 'on' : ''}" aria-pressed="${U()[k] === v}">${l}</button>`).join('')
       + `</div></div>`).join('')
