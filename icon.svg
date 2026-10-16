@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Pull-off calendar filling the icon: red header; yesterday's rain page curls up from the bottom to reveal today's sun.
+       The fold runs from the right edge just under the header (1024,240) to the left edge (0,860). -->
+  <defs>
+    <linearGradient id="header" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f05a4f"/>
+      <stop offset="1" stop-color="#d93b31"/>
+    </linearGradient>
+    <!-- back of the curled page: bright near the lifted tip, grey toward the fold -->
+    <linearGradient id="flap" x1="560" y1="570" x2="370" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#b9c1ca"/>
+      <stop offset="0.55" stop-color="#eceff2"/>
+      <stop offset="0.8" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dfe4e9"/>
+    </linearGradient>
+    <!-- shade on today's page just below the fold -->
+    <linearGradient id="foldShade" x1="512" y1="550" x2="543" y2="601" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1d3557" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#1d3557" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+    <clipPath id="flat"><path d="M0 230 H1024 V240 L0 860 Z"/></clipPath>
+  </defs>
+
+  <!-- today's page underneath, with the sun centered on the page -->
+  <rect width="1024" height="1024" fill="#ffffff"/>
+  <g transform="translate(512 627)">
+    <g stroke="#f5a300" stroke-width="36" stroke-linecap="round">
+      <line x1="0" y1="-178" x2="0" y2="-240"/>
+      <line x1="126" y1="-126" x2="170" y2="-170"/>
+      <line x1="178" y1="0" x2="240" y2="0"/>
+      <line x1="126" y1="126" x2="170" y2="170"/>
+      <line x1="0" y1="178" x2="0" y2="240"/>
+      <line x1="-126" y1="126" x2="-170" y2="170"/>
+      <line x1="-178" y1="0" x2="-240" y2="0"/>
+      <line x1="-126" y1="-126" x2="-170" y2="-170"/>
+    </g>
+    <circle r="138" fill="#ffbf1f"/>
+  </g>
+  <path d="M1024 240 L0 860 V930 L1024 310 Z" fill="url(#foldShade)"/>
+
+  <!-- what's still lying flat of yesterday's page, with its rain cloud centered on the page -->
+  <g clip-path="url(#flat)">
+    <rect width="1024" height="1024" fill="#ffffff"/>
+    <g transform="translate(512 600) scale(2.05)">
+      <path d="M-150 40 Q-200 40 -200 -8 Q-200 -58 -146 -60 Q-136 -128 -64 -136 Q-6 -140 26 -96 Q50 -116 84 -110 Q138 -100 142 -46 Q196 -40 196 0 Q196 40 150 40 Z" fill="#8fa6be"/>
+    </g>
+  </g>
+
+  <!-- the curled-up page (its back), shaped like a lifted page corner -->
+  <path d="M0 860 C70 810 120 720 190 620 C470 560 790 390 1024 240 Z" transform="translate(6 12)" fill="#1d3557" opacity="0.22" filter="url(#soft)"/>
+  <path d="M0 860 C70 810 120 720 190 620 C470 560 790 390 1024 240 Z" fill="url(#flap)"/>
+
+  <!-- red header bar -->
+  <rect width="1024" height="230" fill="url(#header)"/>
+  <rect y="222" width="1024" height="14" fill="#000000" opacity="0.12"/>
+</svg>
