@@ -1218,7 +1218,11 @@ function openCal(selected, today, onPick) {
   let wrap = $('calWrap');
   if (!wrap) {
     wrap = document.createElement('div'); wrap.id = 'calWrap'; wrap.className = 'cal-wrap';
-    wrap.addEventListener('click', e => { if (e.target === wrap) closeCal(); });
+    wrap.addEventListener('click', e => {
+      if (e.target === wrap) { closeCal(); return; }
+      const b = e.target.closest('button[data-d]'); if (!b || b.disabled) return;
+      closeCal(); calState.onPick(b.dataset.d);
+    });
     document.body.appendChild(wrap);
   }
   wrap.hidden = false; document.body.style.overflow = 'hidden';
@@ -1233,37 +1237,46 @@ function closeCal() {
 }
 function drawCal() {
   const c = calState, wrap = $('calWrap');
+  const minY = +MIN_DATE.slice(0, 4), maxY = +c.today.slice(0, 4);
+  let years = ''; for (let y = maxY; y >= minY; y--) years += `<option value="${y}">${y}</option>`;
+  wrap.innerHTML = `<div class="cal" role="dialog" aria-modal="true" aria-label="Choose a date">
+    <div class="cal-head"><h2>Choose a date</h2><button type="button" id="calClose">Cancel</button></div>
+    <div class="cal-nav">
+      <button type="button" class="arrow" id="calPrev" aria-label="Previous month">‹</button>
+      <select id="calMonth" aria-label="Month">${MONTHS.map((n, i) => `<option value="${i}">${n}</option>`).join('')}</select>
+      <select id="calYear" aria-label="Year">${years}</select>
+      <button type="button" class="arrow" id="calNext" aria-label="Next month">›</button>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+    <div class="cal-quick"><button type="button" data-d="${c.today}">Today</button><button type="button" data-d="${addDays(c.today, -1)}">Yesterday</button></div>
+  </div>`;
+  const step = n => { c.m += n; if (c.m < 0) { c.m = 11; c.y--; } if (c.m > 11) { c.m = 0; c.y++; } updateCal(); };
+  $('calClose').onclick = closeCal;
+  $('calPrev').onclick = () => step(-1);
+  $('calNext').onclick = () => step(1);
+  // Update the grid in place: rebuilding or refocusing a <select> reopens its picker on iOS.
+  $('calMonth').onchange = e => { c.m = +e.target.value; updateCal(); };
+  $('calYear').onchange = e => { c.y = +e.target.value; updateCal(); };
+  updateCal();
+}
+function updateCal() {
+  const c = calState, pad = n => String(n).padStart(2, '0');
   const minY = +MIN_DATE.slice(0, 4), maxY = +c.today.slice(0, 4), maxM = +c.today.slice(5, 7) - 1;
   if (c.y > maxY || (c.y === maxY && c.m > maxM)) { c.y = maxY; c.m = maxM; }
   if (c.y < minY) { c.y = minY; c.m = 0; }
-  const pad = n => String(n).padStart(2, '0');
-  const first = new Date(Date.UTC(c.y, c.m, 1)), lead = first.getUTCDay(), count = new Date(Date.UTC(c.y, c.m + 1, 0)).getUTCDate();
-  const atStart = c.y === minY && c.m === 0, atEnd = c.y === maxY && c.m === maxM;
-  let years = ''; for (let y = maxY; y >= minY; y--) years += `<option value="${y}"${y === c.y ? ' selected' : ''}>${y}</option>`;
-  const months = MONTHS.map((n, i) => `<option value="${i}"${i === c.m ? ' selected' : ''}${c.y === maxY && i > maxM ? ' disabled' : ''}>${n}</option>`).join('');
+  const ms = $('calMonth'), ys = $('calYear');
+  if (+ms.value !== c.m) ms.value = String(c.m);
+  if (+ys.value !== c.y) ys.value = String(c.y);
+  Array.from(ms.options).forEach((o, i) => { o.disabled = c.y === maxY && i > maxM; });
+  $('calPrev').disabled = c.y === minY && c.m === 0;
+  $('calNext').disabled = c.y === maxY && c.m === maxM;
+  const lead = new Date(Date.UTC(c.y, c.m, 1)).getUTCDay(), count = new Date(Date.UTC(c.y, c.m + 1, 0)).getUTCDate();
   let cells = ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(w => `<span class="wd">${w}</span>`).join('') + '<span></span>'.repeat(lead);
   for (let day = 1; day <= count; day++) {
     const ymd = `${c.y}-${pad(c.m + 1)}-${pad(day)}`, off = ymd > c.today || ymd < MIN_DATE;
     cells += `<button type="button" data-d="${ymd}" class="${ymd === c.sel ? 'on' : ''}${ymd === c.today ? ' today' : ''}"${off ? ' disabled' : ''} aria-label="${MONTHS[c.m]} ${day}, ${c.y}">${day}</button>`;
   }
-  wrap.innerHTML = `<div class="cal" role="dialog" aria-modal="true" aria-label="Choose a date">
-    <div class="cal-head"><h2>Choose a date</h2><button type="button" id="calClose">Cancel</button></div>
-    <div class="cal-nav">
-      <button type="button" class="arrow" id="calPrev" aria-label="Previous month"${atStart ? ' disabled' : ''}>‹</button>
-      <select id="calMonth" aria-label="Month">${months}</select>
-      <select id="calYear" aria-label="Year">${years}</select>
-      <button type="button" class="arrow" id="calNext" aria-label="Next month"${atEnd ? ' disabled' : ''}>›</button>
-    </div>
-    <div class="cal-grid">${cells}</div>
-    <div class="cal-quick"><button type="button" data-d="${c.today}">Today</button><button type="button" data-d="${addDays(c.today, -1)}">Yesterday</button></div>
-  </div>`;
-  const step = n => { c.m += n; if (c.m < 0) { c.m = 11; c.y--; } if (c.m > 11) { c.m = 0; c.y++; } drawCal(); };
-  $('calClose').onclick = closeCal;
-  $('calPrev').onclick = () => step(-1);
-  $('calNext').onclick = () => step(1);
-  $('calMonth').onchange = e => { c.m = +e.target.value; drawCal(); $('calMonth').focus(); };
-  $('calYear').onchange = e => { c.y = +e.target.value; drawCal(); $('calYear').focus(); };
-  wrap.querySelectorAll('button[data-d]').forEach(b => b.onclick = () => { const v = b.dataset.d; closeCal(); c.onPick(v); });
+  $('calGrid').innerHTML = cells;
 }
 
 /* ---------- locations sheet ---------- */
