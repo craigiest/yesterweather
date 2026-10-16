@@ -15,7 +15,7 @@ Everything is in `index.html`. No build step and no API keys.
 | US AQI, UV index, sunrise/sunset, condition codes | Open-Meteo | none |
 | Place search | Open-Meteo geocoding | none |
 
-Saved locations and the US/SI unit choice are stored in the browser's `localStorage`.
+Saved locations and unit choices (US or Metric presets, or per-measure units) are stored in the browser's `localStorage`.
 
 ## Hosting
 

@@ -158,6 +158,19 @@ table.climo td small { display: block; font-size: 11px; color: var(--fg-dim); }
 .tile .val .unit { font-size: 17px; margin-left: 5px; color: var(--fg-dim); }
 @media (max-width: 380px) { .moon { grid-template-columns: auto 1fr; } .moon .times { grid-column: 1 / -1; } }
 
+/* Units menu */
+.units-pop { position: fixed; inset: 0; z-index: 25; }
+.units-panel {
+  position: absolute; left: max(12px, env(safe-area-inset-left, 0px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 62px);
+  width: min(360px, calc(100vw - 24px)); padding: 14px; border-radius: 16px; background: var(--sheet-bg); color: var(--fg);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45); display: flex; flex-direction: column; gap: 10px;
+}
+.units-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; }
+.units-row > span { font-size: 14px; color: var(--fg-dim); }
+.units-row .seg button { padding: 6px 9px; }
+.units-done { align-self: flex-end; font-weight: 600; font-size: 16px; padding: 4px 2px; }
+.units-open { font-size: 15px; font-weight: 600; color: var(--fg); background: var(--input-bg); border-radius: 9px; padding: 7px 12px; }
+
 /* Day details navigation */
 #details, .dbody { display: flex; flex-direction: column; gap: 12px; }
 .dbody.pending .card > :not(h3), .dbody.pending > .src { visibility: hidden; }
@@ -269,7 +282,12 @@ table.climo td small { display: block; font-size: 11px; color: var(--fg-dim); }
 .loc-card .hi { font-size: 40px; font-weight: 300; line-height: 1; text-align: right; font-variant-numeric: tabular-nums; }
 .loc-card .cd { font-size: 14px; font-weight: 500; align-self: end; }
 .loc-card .hl { font-size: 14px; font-weight: 500; text-align: right; align-self: end; font-variant-numeric: tabular-nums; }
-.loc-wrap { position: relative; display: flex; align-items: center; gap: 10px; }
+.loc-wrap { position: relative; display: flex; align-items: center; gap: 10px; transition: transform 0.2s ease; }
+.loc-wrap.lifted { z-index: 2; transition: none; filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.45)); }
+.loc-swipe { position: relative; flex: 1; min-width: 0; border-radius: 16px; overflow: hidden; }
+.loc-swipe .loc-card { position: relative; z-index: 1; transition: transform 0.22s ease; touch-action: pan-y; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.loc-swipe .loc-card.moving { transition: none; }
+.swipe-del { position: absolute; top: 0; right: 0; bottom: 0; width: 120px; padding-left: 32px; background: #e5443a; color: #fff; font-weight: 600; font-size: 15px; }
 .loc-wrap .del { flex: none; width: 28px; height: 28px; border-radius: 50%; background: #e5443a; color: #fff; font-size: 18px; font-weight: 700; line-height: 1; }
 .about { font-size: 12px; color: var(--fg-dim); line-height: 1.5; margin-top: 8px; }
 .about a { color: inherit; }
@@ -292,7 +310,7 @@ table.climo td small { display: block; font-size: 11px; color: var(--fg-dim); }
 </main>
 
 <nav class="bar-bottom" aria-label="Controls">
-  <button class="btn" id="unitBtn" type="button" aria-label="Switch units">°F</button>
+  <button class="btn" id="unitBtn" type="button" aria-label="Units" aria-haspopup="dialog">°F</button>
   <div class="dots" id="dots"></div>
   <button class="btn" id="listBtn" type="button" aria-label="Locations">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1.2" fill="currentColor"/><circle cx="3.5" cy="12" r="1.2" fill="currentColor"/><circle cx="3.5" cy="18" r="1.2" fill="currentColor"/></svg>
@@ -317,10 +335,7 @@ table.climo td small { display: block; font-size: 11px; color: var(--fg-dim); }
     <div class="loc-list" id="locList"></div>
     <div class="sheet-head" style="margin-top:6px">
       <span class="notice">Units</span>
-      <div class="seg" role="group" aria-label="Units">
-        <button type="button" data-u="us" id="segUS">US (°F, mph, in)</button>
-        <button type="button" data-u="si" id="segSI">SI (°C, m/s, mm)</button>
-      </div>
+      <button type="button" class="units-open" id="unitsOpen" aria-haspopup="dialog"><span id="unitsSummary"></span> ›</button>
     </div>
     <p class="about">
       Daily highs, lows, precipitation, normals (1991–2020) and records come from NOAA station data via
@@ -342,7 +357,7 @@ const store = {
 };
 
 const S = {
-  units: store.get('yw.units', 'us'),
+  units: null,            // filled by loadUnits() below
   saved: store.get('yw.locs', []),
   current: null,          // {id:'here', lat, lon, name, admin, isCurrent:true}
   geoState: 'pending',    // pending | ok | denied | unsupported
@@ -391,24 +406,59 @@ function localParts(date, tz) {
 }
 
 /* ---------- units (internal: °C, m/s, mm, cm snow, m visibility) ---------- */
-const US = () => S.units === 'us';
+const UNIT_OPTS = {
+  temp: { label: 'Temperature', opts: [['F', '°F'], ['C', '°C']] },
+  wind: { label: 'Wind', opts: [['mph', 'mph'], ['kmh', 'km/h'], ['ms', 'm/s'], ['fts', 'ft/s'], ['kn', 'knots']] },
+  precip: { label: 'Precipitation', opts: [['in', 'in'], ['mm', 'mm']] },
+  pressure: { label: 'Pressure', opts: [['inHg', 'inHg'], ['hPa', 'hPa'], ['mbar', 'mbar'], ['kPa', 'kPa'], ['mmHg', 'mmHg']] },
+  distance: { label: 'Distance', opts: [['mi', 'mi'], ['km', 'km']] }
+};
+const UNIT_PRESETS = {
+  us: { temp: 'F', wind: 'mph', precip: 'in', pressure: 'inHg', distance: 'mi' },
+  metric: { temp: 'C', wind: 'kmh', precip: 'mm', pressure: 'hPa', distance: 'km' }   // common public-forecast metric units
+};
+function loadUnits() {
+  const saved = store.get('yw.unitset', null), old = store.get('yw.units', 'us');
+  const u = Object.assign({}, UNIT_PRESETS[old === 'si' ? 'metric' : 'us']);
+  if (saved && typeof saved === 'object') Object.keys(UNIT_OPTS).forEach(k => { if (UNIT_OPTS[k].opts.some(o => o[0] === saved[k])) u[k] = saved[k]; });
+  return u;
+}
+S.units = loadUnits();
+const U = () => S.units;
+const unitLabel = k => UNIT_OPTS[k].opts.find(o => o[0] === S.units[k])[1];
 const cToF = c => c * 9 / 5 + 32;
 const fToC = f => (f - 32) * 5 / 9;
-function fT(c) { if (c == null || isNaN(c)) return '—'; return Math.round(US() ? cToF(c) : c) + '°'; }
-function fTdiff(dc) { const v = Math.round(US() ? dc * 9 / 5 : dc); return (v > 0 ? '+' : '') + v + '°'; }
-function windNum(ms) { if (ms == null) return '—'; if (US()) return String(Math.round(ms * 2.23694)); return ms < 10 ? ms.toFixed(1) : String(Math.round(ms)); }
-function fW(ms) { return ms == null ? '—' : windNum(ms) + (US() ? ' mph' : ' m/s'); }
+const isF = () => U().temp === 'F';
+function fT(c) { if (c == null || isNaN(c)) return '—'; return Math.round(isF() ? cToF(c) : c) + '°'; }
+function fTdiff(dc) { const v = Math.round(isF() ? dc * 9 / 5 : dc); return (v > 0 ? '+' : '') + v + '°'; }
+function windNum(ms) {
+  if (ms == null) return '—';
+  const f = { mph: 2.23694, kmh: 3.6, fts: 3.28084, kn: 1.94384 }[U().wind];
+  if (f) return String(Math.round(ms * f));
+  return ms < 10 ? ms.toFixed(1) : String(Math.round(ms));
+}
+function fW(ms) { return ms == null ? '—' : windNum(ms) + ' ' + unitLabel('wind'); }
+const precipIn = () => U().precip === 'in';
 function precipNum(mm, trace) {
   if (trace) return 'Trace';
   if (mm == null) return '—';
-  return US() ? (mm / 25.4).toFixed(2) : mm.toFixed(1);
+  return precipIn() ? (mm / 25.4).toFixed(2) : mm.toFixed(1);
 }
-function fP(mm, trace) { const n = precipNum(mm, trace); return (n === 'Trace' || n === '—') ? n : n + (US() ? ' in' : ' mm'); }
-function fSnow(cm, trace) { if (trace) return 'Trace'; return cm == null ? '—' : (US() ? (cm / 2.54).toFixed(1) + ' in' : cm.toFixed(1) + ' cm'); }
+function fP(mm, trace) { const n = precipNum(mm, trace); return (n === 'Trace' || n === '—') ? n : n + ' ' + unitLabel('precip'); }
+// Snow depth follows the precipitation setting: inches, or centimeters alongside millimeters.
+function snowNum(cm) { return precipIn() ? (cm / 2.54).toFixed(1) : cm.toFixed(1); }
+function fSnow(cm, trace) { if (trace) return 'Trace'; return cm == null ? '—' : snowNum(cm) + (precipIn() ? ' in' : ' cm'); }
 // Snow leads the precipitation display on days with measurable snow (0.1 in / 0.25 cm or more).
 const snowy = day => day.snow && day.snow.v >= 0.25;
-function fPress(hpa, bare) { if (hpa == null) return '—'; return US() ? (hpa * 0.02953).toFixed(2) + (bare ? '' : ' inHg') : Math.round(hpa) + (bare ? '' : ' hPa'); }
-function fVis(m) { if (m == null) return '—'; return US() ? (m / 1609.34).toFixed(m < 16000 ? 1 : 0) + ' mi' : (m / 1000).toFixed(m < 10000 ? 1 : 0) + ' km'; }
+function fPress(hpa, bare) {
+  if (hpa == null) return '—';
+  const p = U().pressure, n = p === 'inHg' ? (hpa * 0.02953).toFixed(2) : p === 'mmHg' ? String(Math.round(hpa * 0.750062))
+    : p === 'kPa' ? (hpa / 10).toFixed(1) : String(Math.round(hpa)); // hPa and mbar are the same size
+  return n + (bare ? '' : ' ' + p);
+}
+const isMi = () => U().distance === 'mi';
+function fVis(m) { if (m == null) return '—'; return isMi() ? (m / 1609.34).toFixed(m < 16000 ? 1 : 0) + ' mi' : (m / 1000).toFixed(m < 10000 ? 1 : 0) + ' km'; }
+function fDist(km) { return Math.round(isMi() ? km * 0.621371 : km) + (isMi() ? ' mi' : ' km'); }
 const compass = d => d == null ? '' : ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(d / 22.5) % 16];
 
 /* ---------- conditions ---------- */
@@ -623,6 +673,18 @@ async function reverseName(lat, lon) {
   } catch (e) { return null; }
 }
 
+const US_STATES = {
+  AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California', CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware',
+  DC: 'District of Columbia', FL: 'Florida', GA: 'Georgia', HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois', IN: 'Indiana', IA: 'Iowa',
+  KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana', ME: 'Maine', MD: 'Maryland', MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota',
+  MS: 'Mississippi', MO: 'Missouri', MT: 'Montana', NE: 'Nebraska', NV: 'Nevada', NH: 'New Hampshire', NJ: 'New Jersey',
+  NM: 'New Mexico', NY: 'New York', NC: 'North Carolina', ND: 'North Dakota', OH: 'Ohio', OK: 'Oklahoma', OR: 'Oregon',
+  PA: 'Pennsylvania', RI: 'Rhode Island', SC: 'South Carolina', SD: 'South Dakota', TN: 'Tennessee', TX: 'Texas', UT: 'Utah',
+  VT: 'Vermont', VA: 'Virginia', WA: 'Washington', WV: 'West Virginia', WI: 'Wisconsin', WY: 'Wyoming',
+  PR: 'Puerto Rico', GU: 'Guam', VI: 'U.S. Virgin Islands', AS: 'American Samoa', MP: 'Northern Mariana Islands'
+};
+const stateName = s => (s && US_STATES[String(s).toUpperCase()]) || s || '';
+
 /* NWS (api.weather.gov) – US only */
 const NWS_H = { headers: { Accept: 'application/geo+json' } };
 async function getNwsPoint(lat, lon) {
@@ -631,7 +693,7 @@ async function getNwsPoint(lat, lon) {
   const st = await getJSON(p.properties.observationStations, NWS_H);
   const f = (st.features || [])[0];
   return {
-    city: rl ? rl.city : null, state: rl ? rl.state : null,
+    city: rl ? rl.city : null, state: rl ? stateName(rl.state) : null,
     station: f ? { id: f.properties.stationIdentifier, name: f.properties.name } : null
   };
 }
@@ -816,6 +878,7 @@ function buildDay(date, c) {
   if (kind && kind !== 'fog' && !wet) kind = null;      // a stray model code on a dry day
   if (kind === 'fog' && hours.filter(h => h.kind === 'fog').length < 4) kind = null;
   if (!kind && wet) kind = (snow.v > 0 && snow.v * 10 >= pcpn.v * 0.5) ? 'snow' : 'rain';
+  if (snow.v >= 0.25 && kind !== 'storm') kind = 'snow';   // measured snow outranks a model rain code
   const label = kind === 'storm' ? 'Thunderstorms' : kind === 'snow' ? 'Snow' : kind === 'rain' ? (pcpn.v >= 12 ? 'Heavy Rain' : pcpn.v < 2.5 ? 'Light Rain' : 'Rain')
     : kind === 'fog' ? 'Fog' : (cloudWord(cloud) || WMO[code] || '—');
   return {
@@ -900,7 +963,7 @@ function ensureData(loc) {
   if (S.pending.has(loc.id)) return S.pending.get(loc.id);
   const p = loadLoc(loc).then(d => {
     S.data.set(loc.id, d); S.pending.delete(loc.id);
-    if (loc.isCurrent && d.place && !loc.named) { loc.name = d.place.name; loc.admin = d.place.admin; loc.named = true; }
+    if (loc.isCurrent && d.place && !loc.named) { loc.name = d.place.name; loc.admin = d.place.admin; loc.cc = 'US'; loc.country = 'United States'; loc.named = true; }
     return d;
   }, e => { S.pending.delete(loc.id); throw e; });
   S.pending.set(loc.id, p);
@@ -916,8 +979,11 @@ const ICON = {
   pin: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 3 3 10.5l7.5 2.9L13.5 21z"/></svg>'
 };
 
+// US and Canadian places show their state or province; places elsewhere show their country.
 function regionLine(loc) {
-  return [loc.admin, loc.cc && loc.cc !== 'US' ? loc.country : ''].filter(Boolean).join(', ');
+  const cc = String(loc.cc || '').toUpperCase();
+  if (cc === 'US' || cc === 'CA') return loc.admin || '';
+  return loc.country || loc.admin || '';
 }
 
 // Start hourly strips at 11 AM (or as far as a shorter day allows).
@@ -928,7 +994,7 @@ function scrollStrips(root) {
   });
 }
 function hourStrip(day, yday) {
-  const lbl = US() ? ['', '', '°F', 'in', 'mph', 'RH'] : ['', '', '°C', 'mm', 'm/s', 'RH'];
+  const lbl = ['', '', '°' + U().temp, unitLabel('precip'), unitLabel('wind'), 'RH'];
   const cells = day.hours.map(h => {
     const p = h.precip > 0 ? precipNum(h.precip) : '';
     const shownP = (p === '0.00' || p === '0.0') ? '' : p;
@@ -965,7 +1031,7 @@ function daySummary(day) {
 function drawMain() {
   const locs = allLocs();
   renderDots();
-  $('unitBtn').textContent = US() ? '°F' : '°C';
+  $('unitBtn').textContent = '°' + U().temp;
   const main = $('main');
   if (!locs.length) {
     $('sky').className = 'sky-partly';
@@ -1016,7 +1082,7 @@ function drawMain() {
 
   html += `<section class="card"><h3>${ICON.cal}10-Day History</h3><div class="days">` + d.days.slice().reverse().map(day => {
     const left = ((day.lo.v - allLo) / span) * 100, width = Math.max(4, ((day.hi.v - day.lo.v) / span) * 100);
-    const pc = snowy(day) ? `<small>${US() ? (day.snow.v / 2.54).toFixed(1) + '″' : day.snow.v.toFixed(1) + 'cm'}</small>`
+    const pc = snowy(day) ? `<small>${snowNum(day.snow.v) + (precipIn() ? '″' : 'cm')}</small>`
       : day.pcpn.v >= 0.25 || day.pcpn.trace ? `<small>${precipNum(day.pcpn.v, day.pcpn.trace)}</small>` : '';
     const open = S.open.has(day.date);
     return `<div class="day${open ? ' open' : ''}" data-date="${day.date}">
@@ -1067,7 +1133,7 @@ function dayFull(d, date) {
 function drawDetails(d) {
   const box = $('details'); if (!box) return;
   const date = S.sel && S.sel >= MIN_DATE && S.sel <= d.today ? S.sel : d.yday;
-  const token = date + '|' + S.units;
+  const token = date + '|' + JSON.stringify(S.units);
   box.dataset.token = token;
   const head = `<div class="dnav">
       <button type="button" class="dbtn" id="dPrev" aria-label="Previous day"${date <= MIN_DATE ? ' disabled' : ''}>‹</button>
@@ -1125,7 +1191,7 @@ function detailTiles(d, y, cl) {
       <tr><td>Coldest</td><td>${recCell(M.lo)}</td></tr>
       <tr><td>Wettest month</td><td>${recCell(M.pcpn, true)}</td></tr>
       </tbody></table>` : ''}
-      <div class="src">NOAA station: ${esc(c.name)}${c.state ? ', ' + esc(c.state) : ''} (${Math.round(c.dist * (US() ? 0.621 : 1))} ${US() ? 'mi' : 'km'} away). Normals are 1991–2020; records cover the station’s full history.</div></section>`;
+      <div class="src">NOAA station: ${esc(c.name)}${c.state ? ', ' + esc(stateName(c.state)) : ''} (${fDist(c.dist)} away). Normals are 1991–2020; records cover the station’s full history.</div></section>`;
   } else {
     html += `<section class="card tile wide"><h3>Normals &amp; Records</h3><div class="note" style="padding:0">Normals and records come from NOAA and are available for US locations only.</div></section>`;
   }
@@ -1162,7 +1228,7 @@ function detailTiles(d, y, cl) {
   const pr = y.hours.filter(h => h.press != null), pd = pr.length > 1 ? pr[pr.length - 1].press - pr[0].press : null;
   const trend = pd == null ? '' : pd > 1 ? 'Rising' : pd < -1 ? 'Falling' : 'Steady';
   pair(`<section class="card tile"><h3>Humidity</h3><div class="val">${y.humAvg == null ? '—' : Math.round(y.humAvg) + '%'}</div><div class="sub">Average${so}</div><div class="note">Range ${y.humMin == null ? '—' : Math.round(y.humMin) + '–' + Math.round(y.humMax) + '%'}</div></section>`,
-    `<section class="card tile"><h3>Pressure</h3><div class="val">${fPress(y.pressAvg, true)}${y.pressAvg == null ? '' : `<span class="unit">${US() ? 'inHg' : 'hPa'}</span>`}</div><div class="sub">${trend ? trend + (trend === 'Rising' ? ' ↑' : trend === 'Falling' ? ' ↓' : '') : 'Average'}</div><div class="note">${pr.length ? `Average${so}; range ${fPress(y.pressMin, true)}–${fPress(y.pressMax)}` : na}</div></section>`);
+    `<section class="card tile"><h3>Pressure</h3><div class="val">${fPress(y.pressAvg, true)}${y.pressAvg == null ? '' : `<span class="unit">${U().pressure}</span>`}</div><div class="sub">${trend ? trend + (trend === 'Rising' ? ' ↑' : trend === 'Falling' ? ' ↓' : '') : 'Average'}</div><div class="note">${pr.length ? `Average${so}; range ${fPress(y.pressMin, true)}–${fPress(y.pressMax)}` : na}</div></section>`);
   // AQI
   if (y.aqi) {
     const lo = y.aqi.min, hi = y.aqi.max, cl2 = aqiCat(lo.v), ch = aqiCat(hi.v);
@@ -1294,7 +1360,9 @@ function closeSheet() {
   drawMain();
 }
 function drawSheet() {
-  $('segUS').classList.toggle('on', US()); $('segSI').classList.toggle('on', !US());
+  if (G.active && G.active.mode) { S.sheetDirty = true; return; } // don't redraw under a finger mid-gesture
+  openSwipe = null;
+  $('unitsSummary').textContent = unitSummary();
   $('editBtn').textContent = S.editing ? 'Cancel' : 'Edit';
   $('editBtn').hidden = !S.saved.length;
   const notice = $('notice');
@@ -1310,16 +1378,13 @@ function drawSheet() {
     if (full) { const y = full.days.find(x => x.date === full.yday); hi = fT(y.hi.v); lo = fT(y.lo.v); cond = y.label; sky = y.sky; }
     else if (lite) { hi = fT(lite.hi); lo = fT(lite.lo); cond = lite.label; sky = lite.sky; }
     const card = `<button type="button" class="loc-card ${sky}" data-i="${i}">
-      <span><span class="nm">${esc(l.isCurrent ? 'My Location' : l.name)}</span><br><span class="rg">${esc(l.isCurrent ? (l.name || '') : [l.admin, l.country].filter(Boolean).join(', '))}</span></span>
+      <span><span class="nm">${esc(l.isCurrent ? 'My Location' : l.name)}</span><br><span class="rg">${esc(l.isCurrent ? (l.name || '') : regionLine(l))}</span></span>
       <span class="hi">${hi}</span><span class="cd">${cond ? 'Yesterday · ' + esc(cond) : ''}</span><span class="hl">${hi ? 'H:' + hi + ' L:' + lo : ''}</span></button>`;
-    const del = S.editing && !l.isCurrent ? `<button type="button" class="del" data-id="${esc(l.id)}" aria-label="Remove ${esc(l.name)}">−</button>` : '';
-    return `<div class="loc-wrap">${del}${card}</div>`;
+    if (l.isCurrent) return `<div class="loc-wrap"><div class="loc-swipe">${card}</div></div>`;
+    const del = S.editing ? `<button type="button" class="del" data-del="${esc(l.id)}" aria-label="Delete ${esc(l.name)}">−</button>` : '';
+    return `<div class="loc-wrap" data-id="${esc(l.id)}">${del}<div class="loc-swipe">`
+      + `<button type="button" class="swipe-del" data-del="${esc(l.id)}" tabindex="-1" aria-label="Delete ${esc(l.name)}">Delete</button>${card}</div></div>`;
   }).join('');
-  $('locList').querySelectorAll('.loc-card').forEach(b => b.onclick = () => { if (S.editing) return; S.index = Number(b.dataset.i); S.open.clear(); S.sel = null; closeSheet(); window.scrollTo(0, 0); });
-  $('locList').querySelectorAll('.del').forEach(b => b.onclick = () => {
-    S.saved = S.saved.filter(x => x.id !== b.dataset.id); store.set('yw.locs', S.saved);
-    S.index = 0; if (!S.saved.length) S.editing = false; drawSheet();
-  });
   locs.forEach(l => { if (!S.data.has(l.id) && !S.light.has(l.id)) loadLight(l); });
 }
 function loadLight(l) {
@@ -1337,6 +1402,107 @@ function loadLight(l) {
   }).catch(() => {});
 }
 
+
+/* ---------- location list gestures: hold-and-drag to reorder, swipe left to delete ---------- */
+const G = { active: null, noClickUntil: 0 };
+const SWIPE_W = 88, LIST_GAP = 10;
+let openSwipe = null;
+function closeSwipe(except) {
+  if (openSwipe && openSwipe !== except) { openSwipe.style.transform = ''; openSwipe = null; }
+}
+function deleteLoc(id) {
+  const cur = allLocs()[S.index], curId = cur && cur.id;
+  S.saved = S.saved.filter(x => x.id !== id); store.set('yw.locs', S.saved);
+  S.data.delete(id); S.light.delete(id);
+  const i = allLocs().findIndex(x => x.id === curId);
+  S.index = i < 0 ? 0 : i;
+  if (!S.saved.length) S.editing = false;
+  drawSheet();
+}
+function startDrag() {
+  const g = G.active; if (!g || g.mode) return;
+  g.mode = 'drag'; closeSwipe();
+  try { if (navigator.vibrate) navigator.vibrate(10); } catch (e) {}
+  g.wraps = Array.from($('locList').querySelectorAll('.loc-wrap[data-id]'));
+  g.from = g.to = g.wraps.indexOf(g.wrap);
+  g.rects = g.wraps.map(w => w.getBoundingClientRect());
+  g.wrap.classList.add('lifted');
+  moveDrag(g.y0);
+}
+function moveDrag(y) {
+  const g = G.active, dy = y - g.y0, r0 = g.rects[g.from];
+  g.wrap.style.transform = `translateY(${dy}px) scale(1.03)`;
+  const center = r0.top + r0.height / 2 + dy;
+  let to = g.from;
+  g.rects.forEach((r, i) => {
+    const mid = r.top + r.height / 2;
+    if (i < g.from && center < mid) to = Math.min(to, i);
+    if (i > g.from && center > mid) to = Math.max(to, i);
+  });
+  g.to = to;
+  const shift = r0.height + LIST_GAP;
+  g.wraps.forEach((w, i) => {
+    if (i === g.from) return;
+    const t = (g.from < to && i > g.from && i <= to) ? -shift : (to < g.from && i >= to && i < g.from) ? shift : 0;
+    w.style.transform = t ? `translateY(${t}px)` : '';
+  });
+}
+function endGesture(e) {
+  const g = G.active; if (!g || e.pointerId !== g.pid) return;
+  clearTimeout(g.timer); G.active = null;
+  if (g.mode === 'swipe') {
+    G.noClickUntil = Date.now() + 400;
+    g.card.classList.remove('moving');
+    const x = Math.min(0, g.base + g.dx);
+    if (x < -g.card.offsetWidth * 0.6) { deleteLoc(g.id); return; }       // a long swipe deletes outright
+    if (x < -SWIPE_W / 2) { g.card.style.transform = `translateX(${-SWIPE_W}px)`; openSwipe = g.card; }
+    else { g.card.style.transform = ''; if (openSwipe === g.card) openSwipe = null; }
+  } else if (g.mode === 'drag') {
+    G.noClickUntil = Date.now() + 400;
+    if (g.to !== g.from) {
+      const cur = allLocs()[S.index], curId = cur && cur.id;
+      const [m] = S.saved.splice(g.from, 1); S.saved.splice(g.to, 0, m); store.set('yw.locs', S.saved);
+      S.index = Math.max(0, allLocs().findIndex(x => x.id === curId));
+    }
+    S.sheetDirty = true;
+  }
+  if (S.sheetDirty) { S.sheetDirty = false; drawSheet(); }
+}
+(function initListGestures() {
+  const list = $('locList');
+  list.addEventListener('pointerdown', e => {
+    if (e.button > 0 || S.editing) return;
+    const card = e.target.closest('.loc-card'); if (!card) return;
+    const wrap = card.closest('.loc-wrap');
+    if (!wrap.dataset.id) { closeSwipe(); return; }   // My Location stays put
+    G.active = { wrap, card, id: wrap.dataset.id, pid: e.pointerId, x0: e.clientX, y0: e.clientY, dx: 0, dy: 0, mode: null, base: card === openSwipe ? -SWIPE_W : 0 };
+    G.active.timer = setTimeout(startDrag, 450);
+  });
+  window.addEventListener('pointermove', e => {
+    const g = G.active; if (!g || e.pointerId !== g.pid) return;
+    g.dx = e.clientX - g.x0; g.dy = e.clientY - g.y0;
+    if (!g.mode) {
+      if (Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy)) { g.mode = 'swipe'; clearTimeout(g.timer); closeSwipe(g.card); g.card.classList.add('moving'); }
+      else if (Math.abs(g.dy) > 8) { clearTimeout(g.timer); G.active = null; return; }   // a vertical move before the hold is a scroll
+    }
+    if (g.mode === 'swipe') g.card.style.transform = `translateX(${Math.min(0, g.base + g.dx)}px)`;
+    else if (g.mode === 'drag') moveDrag(e.clientY);
+  });
+  window.addEventListener('pointerup', endGesture);
+  window.addEventListener('pointercancel', endGesture);
+  // Stop the page from scrolling while a card is being dragged or swiped.
+  list.addEventListener('touchmove', e => { if (G.active && G.active.mode) e.preventDefault(); }, { passive: false });
+  list.addEventListener('contextmenu', e => { if (e.target.closest('.loc-card')) e.preventDefault(); });
+  list.addEventListener('click', e => {
+    const del = e.target.closest('[data-del]');
+    if (del) { deleteLoc(del.dataset.del); return; }
+    const card = e.target.closest('.loc-card'); if (!card) return;
+    if (Date.now() < G.noClickUntil || S.editing) return;
+    if (openSwipe) { closeSwipe(); return; }       // a tap while a row is open just closes it
+    S.index = Number(card.dataset.i); S.open.clear(); S.sel = null; closeSheet(); window.scrollTo(0, 0);
+  });
+})();
+
 let searchTimer = 0, searchSeq = 0;
 $('q').addEventListener('input', () => {
   clearTimeout(searchTimer);
@@ -1349,7 +1515,7 @@ $('q').addEventListener('input', () => {
     try { res = await geocode(q); } catch (e) { if (seq === searchSeq) $('results').innerHTML = '<div class="none">Search isn’t available right now. Check your connection and try again.</div>'; return; }
     if (seq !== searchSeq) return;
     if (!res.length) { $('results').innerHTML = `<div class="none">No places match “${esc(q)}”.</div>`; return; }
-    $('results').innerHTML = res.map((r, i) => `<button type="button" data-i="${i}">${esc(r.name)}<span>${esc([', ' + r.admin, r.country].filter(x => x && x !== ', ').join(', ').replace(/^, /, ', '))}</span></button>`).join('');
+    $('results').innerHTML = res.map((r, i) => `<button type="button" data-i="${i}">${esc(r.name)}<span>${regionLine(r) ? ', ' + esc(regionLine(r)) : ''}</span></button>`).join('');
     $('results').querySelectorAll('button').forEach(b => b.onclick = () => addLoc(res[Number(b.dataset.i)]));
   }, 300);
 });
@@ -1361,10 +1527,42 @@ function addLoc(r) {
 }
 
 /* ---------- controls ---------- */
-function setUnits(u) { S.units = u; store.set('yw.units', u); drawMain(); if (!$('sheet').hidden) drawSheet(); }
-$('unitBtn').onclick = () => setUnits(US() ? 'si' : 'us');
-$('segUS').onclick = () => setUnits('us');
-$('segSI').onclick = () => setUnits('si');
+/* ---------- units menu ---------- */
+function unitSummary() { return '°' + U().temp; }
+function setUnits(patch) {
+  S.units = Object.assign({}, S.units, patch); store.set('yw.unitset', S.units);
+  drawMain(); if (!$('sheet').hidden) drawSheet(); drawUnitsMenu();
+}
+function drawUnitsMenu() {
+  const pop = $('unitsPop'); if (!pop || pop.hidden) return;
+  const preset = Object.keys(UNIT_PRESETS).find(p => Object.keys(UNIT_OPTS).every(k => UNIT_PRESETS[p][k] === U()[k]));
+  pop.innerHTML = `<div class="units-panel" role="dialog" aria-label="Units">
+    <div class="units-row"><span>Presets</span><div class="seg">
+      <button type="button" data-preset="us" class="${preset === 'us' ? 'on' : ''}">US</button>
+      <button type="button" data-preset="metric" class="${preset === 'metric' ? 'on' : ''}">Metric</button></div></div>`
+    + Object.keys(UNIT_OPTS).map(k => `<div class="units-row"><span>${UNIT_OPTS[k].label}</span><div class="seg" role="group" aria-label="${UNIT_OPTS[k].label}">`
+      + UNIT_OPTS[k].opts.map(([v, l]) => `<button type="button" data-k="${k}" data-v="${v}" class="${U()[k] === v ? 'on' : ''}" aria-pressed="${U()[k] === v}">${l}</button>`).join('')
+      + `</div></div>`).join('')
+    + `<button type="button" class="units-done" id="unitsDone">Done</button></div>`;
+}
+function openUnits() {
+  let pop = $('unitsPop');
+  if (!pop) {
+    pop = document.createElement('div'); pop.id = 'unitsPop'; pop.className = 'units-pop';
+    pop.addEventListener('click', e => {
+      if (e.target === pop || e.target.id === 'unitsDone') { closeUnits(); return; }
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.preset) setUnits(UNIT_PRESETS[b.dataset.preset]);
+      else if (b.dataset.k) setUnits({ [b.dataset.k]: b.dataset.v });
+    });
+    document.body.appendChild(pop);
+  }
+  pop.hidden = false; drawUnitsMenu();
+  const on = pop.querySelector('button.on'); if (on) on.focus();
+}
+function closeUnits() { const pop = $('unitsPop'); if (pop && !pop.hidden) { pop.hidden = true; $('unitBtn').focus(); } }
+$('unitBtn').onclick = openUnits;
+$('unitsOpen').onclick = openUnits;
 $('listBtn').onclick = () => openSheet(false);
 $('doneBtn').onclick = closeSheet;
 $('editBtn').onclick = () => { S.editing = !S.editing; drawSheet(); };
@@ -1377,7 +1575,8 @@ $('main').addEventListener('click', e => {
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   const cw = $('calWrap');
-  if (cw && !cw.hidden) closeCal(); else if (!$('sheet').hidden) closeSheet();
+  const up = $('unitsPop');
+  if (up && !up.hidden) closeUnits(); else if (cw && !cw.hidden) closeCal(); else if (!$('sheet').hidden) closeSheet();
 });
 
 // Horizontal swipe between locations (ignored when the swipe starts inside a scrolling hour strip)
