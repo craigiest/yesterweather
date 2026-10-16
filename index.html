@@ -106,6 +106,7 @@ main {
 .hr { flex: 0 0 54px; display: grid; grid-template-rows: 20px 30px 24px 20px 22px 20px; gap: 6px; text-align: center; align-items: center; font-variant-numeric: tabular-nums; font-size: 14px; }
 .hr .t { font-size: 13px; font-weight: 600; }
 .hr .ic { font-size: 22px; line-height: 1; }
+.wx-svg { width: 1.3em; height: 1.13em; display: inline-block; vertical-align: -0.2em; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.12)); }
 .hr .tp { font-size: 17px; font-weight: 500; }
 .hr .pc { font-size: 12px; color: var(--rain); font-weight: 600; }
 .hr .wd { font-size: 13px; display: flex; justify-content: center; align-items: center; gap: 2px; }
@@ -493,12 +494,16 @@ function cloudWord(pct) {
   if (pct < 87) return 'Mostly Cloudy';
   return 'Cloudy';
 }
+// Apple's fog emoji renders as a grey square, so fog gets a drawn icon sized like an emoji.
+const FOG_ICON = '<svg class="wx-svg" viewBox="0 0 64 56" aria-label="Fog" role="img">'
+  + '<g fill="#f4f6f9"><circle cx="24" cy="22" r="12"/><circle cx="38" cy="17" r="14"/><circle cx="49" cy="26" r="9"/><rect x="12" y="22" width="46" height="13" rx="6.5"/></g>'
+  + '<g stroke="#dfe5ec" stroke-width="5" stroke-linecap="round"><line x1="8" y1="42" x2="50" y2="42"/><line x1="16" y1="51" x2="58" y2="51"/></g></svg>';
 function iconFor(kind, cloud, isDay = true) {
   switch (kind) {
     case 'storm': return '⛈️';
     case 'snow': return '🌨️';
     case 'rain': return '🌧️';
-    case 'fog': return '🌫️';
+    case 'fog': return FOG_ICON;
   }
   if (cloud == null) return isDay ? '⛅' : '☁️';
   if (cloud < 15) return isDay ? '☀️' : '🌙';
