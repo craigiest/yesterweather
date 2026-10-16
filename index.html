@@ -189,6 +189,7 @@ table.climo td small { display: block; font-size: 11px; color: var(--fg-dim); }
 .cal-nav select { flex: 1; min-width: 0; font: inherit; font-size: 16px; font-weight: 600; color: var(--fg); background: var(--input-bg); border: 0; border-radius: 9px; padding: 8px 10px; }
 .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
 .cal-grid .wd { font-size: 11px; font-weight: 600; color: var(--fg-dim); padding-bottom: 2px; }
+.cal-grid .pad { aspect-ratio: 1; }
 .cal-grid button { aspect-ratio: 1; max-width: 100%; border-radius: 50%; font-size: 16px; }
 .cal-grid button:disabled { opacity: 0.25; cursor: default; }
 .cal-grid button.today { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.6); }
@@ -1271,11 +1272,13 @@ function updateCal() {
   $('calPrev').disabled = c.y === minY && c.m === 0;
   $('calNext').disabled = c.y === maxY && c.m === maxM;
   const lead = new Date(Date.UTC(c.y, c.m, 1)).getUTCDay(), count = new Date(Date.UTC(c.y, c.m + 1, 0)).getUTCDate();
-  let cells = ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(w => `<span class="wd">${w}</span>`).join('') + '<span></span>'.repeat(lead);
+  let cells = ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(w => `<span class="wd">${w}</span>`).join('') + '<span class="pad"></span>'.repeat(lead);
   for (let day = 1; day <= count; day++) {
     const ymd = `${c.y}-${pad(c.m + 1)}-${pad(day)}`, off = ymd > c.today || ymd < MIN_DATE;
     cells += `<button type="button" data-d="${ymd}" class="${ymd === c.sel ? 'on' : ''}${ymd === c.today ? ' today' : ''}"${off ? ' disabled' : ''} aria-label="${MONTHS[c.m]} ${day}, ${c.y}">${day}</button>`;
   }
+  // Always six week rows, so the calendar (and its arrows) keeps the same height from month to month.
+  cells += '<span class="pad"></span>'.repeat(42 - lead - count);
   $('calGrid').innerHTML = cells;
 }
 
