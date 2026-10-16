@@ -287,7 +287,13 @@ table.climo td small { display: block; font-size: 11px; color: var(--fg-dim); }
 .loc-swipe { position: relative; flex: 1; min-width: 0; border-radius: 16px; overflow: hidden; }
 .loc-swipe .loc-card { position: relative; z-index: 1; transition: transform 0.22s ease; touch-action: pan-y; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .loc-swipe .loc-card.moving { transition: none; }
-.swipe-del { position: absolute; top: 0; right: 0; bottom: 0; width: 120px; padding-left: 32px; background: #e5443a; color: #fff; font-weight: 600; font-size: 15px; }
+.swipe-del {
+  position: absolute; inset: 0; display: flex; justify-content: flex-end; align-items: center;
+  background: #e5443a; color: #fff; font-weight: 600; font-size: 15px; visibility: hidden;
+}
+.swipe-del span { width: 88px; text-align: center; }
+/* Only show the red layer while a card is being swiped or is open, so it can't peek past the rounded corners. */
+.loc-swipe.reveal .swipe-del { visibility: visible; }
 .loc-wrap .del { flex: none; width: 28px; height: 28px; border-radius: 50%; background: #e5443a; color: #fff; font-size: 18px; font-weight: 700; line-height: 1; }
 .about { font-size: 12px; color: var(--fg-dim); line-height: 1.5; margin-top: 8px; }
 .about a { color: inherit; }
@@ -1383,7 +1389,7 @@ function drawSheet() {
     if (l.isCurrent) return `<div class="loc-wrap"><div class="loc-swipe">${card}</div></div>`;
     const del = S.editing ? `<button type="button" class="del" data-del="${esc(l.id)}" aria-label="Delete ${esc(l.name)}">−</button>` : '';
     return `<div class="loc-wrap" data-id="${esc(l.id)}">${del}<div class="loc-swipe">`
-      + `<button type="button" class="swipe-del" data-del="${esc(l.id)}" tabindex="-1" aria-label="Delete ${esc(l.name)}">Delete</button>${card}</div></div>`;
+      + `<button type="button" class="swipe-del" data-del="${esc(l.id)}" tabindex="-1" aria-label="Delete ${esc(l.name)}"><span>Delete</span></button>${card}</div></div>`;
   }).join('');
   locs.forEach(l => { if (!S.data.has(l.id) && !S.light.has(l.id)) loadLight(l); });
 }
@@ -1407,8 +1413,12 @@ function loadLight(l) {
 const G = { active: null, noClickUntil: 0 };
 const SWIPE_W = 88, LIST_GAP = 10;
 let openSwipe = null;
+function snapShut(card) {
+  card.style.transform = '';
+  setTimeout(() => { if (!card.style.transform) card.parentElement.classList.remove('reveal'); }, 260);
+}
 function closeSwipe(except) {
-  if (openSwipe && openSwipe !== except) { openSwipe.style.transform = ''; openSwipe = null; }
+  if (openSwipe && openSwipe !== except) { snapShut(openSwipe); openSwipe = null; }
 }
 function deleteLoc(id) {
   const cur = allLocs()[S.index], curId = cur && cur.id;
@@ -1456,7 +1466,7 @@ function endGesture(e) {
     const x = Math.min(0, g.base + g.dx);
     if (x < -g.card.offsetWidth * 0.6) { deleteLoc(g.id); return; }       // a long swipe deletes outright
     if (x < -SWIPE_W / 2) { g.card.style.transform = `translateX(${-SWIPE_W}px)`; openSwipe = g.card; }
-    else { g.card.style.transform = ''; if (openSwipe === g.card) openSwipe = null; }
+    else { snapShut(g.card); if (openSwipe === g.card) openSwipe = null; }
   } else if (g.mode === 'drag') {
     G.noClickUntil = Date.now() + 400;
     if (g.to !== g.from) {
@@ -1482,7 +1492,7 @@ function endGesture(e) {
     const g = G.active; if (!g || e.pointerId !== g.pid) return;
     g.dx = e.clientX - g.x0; g.dy = e.clientY - g.y0;
     if (!g.mode) {
-      if (Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy)) { g.mode = 'swipe'; clearTimeout(g.timer); closeSwipe(g.card); g.card.classList.add('moving'); }
+      if (Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy)) { g.mode = 'swipe'; clearTimeout(g.timer); closeSwipe(g.card); g.card.classList.add('moving'); g.card.parentElement.classList.add('reveal'); }
       else if (Math.abs(g.dy) > 8) { clearTimeout(g.timer); G.active = null; return; }   // a vertical move before the hold is a scroll
     }
     if (g.mode === 'swipe') g.card.style.transform = `translateX(${Math.min(0, g.base + g.dx)}px)`;
