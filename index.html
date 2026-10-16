@@ -113,7 +113,7 @@ main {
 /* 10-day */
 .days { display: flex; flex-direction: column; }
 .day + .day { border-top: 1px solid var(--rule); }
-.day-row { display: grid; grid-template-columns: 4.4em 2.2em 2.6em 1fr 2.6em 1em; align-items: center; gap: 8px; width: 100%; padding: 10px 0; text-align: left; font-size: 17px; font-variant-numeric: tabular-nums; }
+.day-row { display: grid; grid-template-columns: 5.3em 2.2em 2.6em 1fr 2.6em 1em; align-items: center; gap: 8px; width: 100%; padding: 10px 0; text-align: left; font-size: 17px; font-variant-numeric: tabular-nums; }
 .day-row .dn { font-weight: 500; }
 .day-row .di { font-size: 20px; text-align: center; line-height: 1; display: flex; flex-direction: column; align-items: center; }
 .day-row .di small { font-size: 10px; color: var(--rain); font-weight: 700; margin-top: 2px; }
@@ -144,6 +144,19 @@ table.climo th:first-child, table.climo td:first-child { text-align: left; }
 table.climo td { text-align: right; padding: 6px 0; border-top: 1px solid var(--rule); }
 table.climo td small { display: block; font-size: 11px; color: var(--fg-dim); }
 .sunline { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+
+.hero .region { font-size: 17px; color: var(--fg-dim); margin-top: 2px; }
+.times { display: flex; flex-direction: column; gap: 6px; font-variant-numeric: tabular-nums; }
+.times div { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.times span { font-size: 14px; color: var(--fg-dim); }
+.times b { font-size: 19px; font-weight: 500; }
+.moon { display: grid; grid-template-columns: auto 1fr minmax(9.5em, auto); gap: 14px; align-items: center; }
+.moon-ic { font-size: 46px; line-height: 1; }
+.times.stack { gap: 8px; }
+.times.stack div { flex-direction: column; align-items: flex-start; gap: 0; }
+.times.stack span { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.tile .val .unit { font-size: 17px; margin-left: 5px; color: var(--fg-dim); }
+@media (max-width: 380px) { .moon { grid-template-columns: auto 1fr; } .moon .times { grid-column: 1 / -1; } }
 
 /* Day details navigation */
 #details { display: flex; flex-direction: column; gap: 12px; scroll-margin-top: calc(env(safe-area-inset-top, 0px) + 12px); }
@@ -236,7 +249,7 @@ table.climo td small { display: block; font-size: 11px; color: var(--fg-dim); }
 .notice { font-size: 14px; color: var(--fg-dim); line-height: 1.4; }
 
 @media (max-width: 380px) {
-  .day-row { grid-template-columns: 3.6em 2em 2.3em 1fr 2.3em 0.8em; gap: 6px; font-size: 16px; }
+  .day-row { grid-template-columns: 5.1em 1.9em 2.2em 1fr 2.2em 0.6em; gap: 5px; font-size: 16px; }
   .hero .big { font-size: 84px; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -365,6 +378,7 @@ function precipNum(mm, trace) {
 }
 function fP(mm, trace) { const n = precipNum(mm, trace); return (n === 'Trace' || n === '—') ? n : n + (US() ? ' in' : ' mm'); }
 function fSnow(cm) { return cm == null ? '—' : (US() ? (cm / 2.54).toFixed(1) + ' in' : cm.toFixed(1) + ' cm'); }
+function fPress(hpa, bare) { if (hpa == null) return '—'; return US() ? (hpa * 0.02953).toFixed(2) + (bare ? '' : ' inHg') : Math.round(hpa) + (bare ? '' : ' hPa'); }
 function fVis(m) { if (m == null) return '—'; return US() ? (m / 1609.34).toFixed(m < 16000 ? 1 : 0) + ' mi' : (m / 1000).toFixed(m < 10000 ? 1 : 0) + ' km'; }
 const compass = d => d == null ? '' : ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(d / 22.5) % 16];
 
@@ -440,8 +454,94 @@ function tempColor(c) {
   return `rgb(${stops[stops.length - 1][1]})`;
 }
 
+/* ---------- sun & moon (moon math adapted from SunCalc, BSD-2-Clause, Vladimir Agafonkin) ---------- */
+const RAD = Math.PI / 180, OBLIQ = RAD * 23.4397;
+const toDays = t => t / 864e5 - 0.5 + 2440588 - 2451545;
+const rightAsc = (l, b) => Math.atan2(Math.sin(l) * Math.cos(OBLIQ) - Math.tan(b) * Math.sin(OBLIQ), Math.cos(l));
+const declin = (l, b) => Math.asin(Math.sin(b) * Math.cos(OBLIQ) + Math.cos(b) * Math.sin(OBLIQ) * Math.sin(l));
+function sunCoords(d) {
+  const M = RAD * (357.5291 + 0.98560028 * d);
+  const L = M + RAD * (1.9148 * Math.sin(M) + 0.02 * Math.sin(2 * M) + 0.0003 * Math.sin(3 * M)) + RAD * 102.9372 + Math.PI;
+  return { dec: declin(L, 0), ra: rightAsc(L, 0) };
+}
+function moonCoords(d) {
+  const L = RAD * (218.316 + 13.176396 * d), M = RAD * (134.963 + 13.064993 * d), F = RAD * (93.272 + 13.229350 * d);
+  const l = L + RAD * 6.289 * Math.sin(M), b = RAD * 5.128 * Math.sin(F);
+  return { ra: rightAsc(l, b), dec: declin(l, b), dist: 385001 - 20905 * Math.cos(M) };
+}
+function moonAltitude(t, lat, lon) {
+  const d = toDays(t), c = moonCoords(d), phi = RAD * lat;
+  const H = RAD * (280.16 + 360.9856235 * d) + RAD * lon - c.ra;
+  let h = Math.asin(Math.sin(phi) * Math.sin(c.dec) + Math.cos(phi) * Math.cos(c.dec) * Math.cos(H));
+  const hr = Math.max(h, 0);
+  return h + 0.0002967 / Math.tan(hr + 0.00312536 / (hr + 0.08901179));
+}
+function moonIllum(t) {
+  const d = toDays(t), s = sunCoords(d), m = moonCoords(d), sdist = 149598000;
+  const phi = Math.acos(Math.sin(s.dec) * Math.sin(m.dec) + Math.cos(s.dec) * Math.cos(m.dec) * Math.cos(s.ra - m.ra));
+  const inc = Math.atan2(sdist * Math.sin(phi), m.dist - sdist * Math.cos(phi));
+  const angle = Math.atan2(Math.cos(s.dec) * Math.sin(s.ra - m.ra), Math.sin(s.dec) * Math.cos(m.dec) - Math.cos(s.dec) * Math.sin(m.dec) * Math.cos(s.ra - m.ra));
+  return { fraction: (1 + Math.cos(inc)) / 2, phase: 0.5 + 0.5 * inc * (angle < 0 ? -1 : 1) / Math.PI };
+}
+// Moonrise/moonset within the 24 hours starting at t0 (ms), as ms timestamps.
+function moonTimes(t0, lat, lon) {
+  const hc = 0.133 * RAD, alt = i => moonAltitude(t0 + i * 3600e3, lat, lon) - hc;
+  let h0 = alt(0), rise = null, set = null, ye = 0;
+  for (let i = 1; i <= 24; i += 2) {
+    const h1 = alt(i), h2 = alt(i + 1);
+    const a = (h0 + h2) / 2 - h1, b = (h2 - h0) / 2, xe = -b / (2 * a);
+    ye = (a * xe + b) * xe + h1;
+    const disc = b * b - 4 * a * h1;
+    let roots = 0, x1 = 0, x2 = 0;
+    if (disc >= 0) {
+      const dx = Math.sqrt(disc) / (Math.abs(a) * 2);
+      x1 = xe - dx; x2 = xe + dx;
+      if (Math.abs(x1) <= 1) roots++;
+      if (Math.abs(x2) <= 1) roots++;
+      if (x1 < -1) x1 = x2;
+    }
+    if (roots === 1) { if (h0 < 0) rise = i + x1; else set = i + x1; }
+    else if (roots === 2) { rise = i + (ye < 0 ? x2 : x1); set = i + (ye < 0 ? x1 : x2); }
+    if (rise != null && set != null) break;
+    h0 = h2;
+  }
+  return { rise: rise == null ? null : t0 + rise * 3600e3, set: set == null ? null : t0 + set * 3600e3, up: ye > 0 };
+}
+// UTC timestamp of local midnight starting `ymd` in time zone `tz`.
+function zoneMidnight(ymd, tz) {
+  const guess = Date.parse(ymd + 'T00:00:00Z');
+  const offset = t => {
+    const p = {};
+    new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      .formatToParts(new Date(t)).forEach(x => { p[x.type] = x.value; });
+    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - t;
+  };
+  return guess - offset(guess - offset(guess));
+}
+function zoneClock(t, tz) {
+  return new Date(t).toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' });
+}
+function moonDay(ymd, tz, lat, lon) {
+  const t0 = zoneMidnight(ymd, tz), il = moonIllum(t0 + 12 * 3600e3), p = il.phase;
+  const near = x => Math.abs(p - x) < 0.034 || Math.abs(p - x - 1) < 0.034;
+  const name = near(0) ? 'New Moon' : near(0.25) ? 'First Quarter' : near(0.5) ? 'Full Moon' : near(0.75) ? 'Last Quarter'
+    : p < 0.25 ? 'Waxing Crescent' : p < 0.5 ? 'Waxing Gibbous' : p < 0.75 ? 'Waning Gibbous' : 'Waning Crescent';
+  const icon = ['🌑', '🌒', '🌓', '🌔', '🌕', '🌖', '🌗', '🌘'][Math.round(p * 8) % 8];
+  const tm = moonTimes(t0, lat, lon), events = [];
+  if (tm.rise != null) events.push({ label: 'Moonrise', t: tm.rise });
+  if (tm.set != null) events.push({ label: 'Moonset', t: tm.set });
+  events.sort((a, b) => a.t - b.t);
+  return { name, icon, pct: Math.round(il.fraction * 100), events: events.map(e => ({ label: e.label, time: zoneClock(e.t, tz) })), up: tm.up };
+}
+function solarNoon(rise, set) { // local ISO strings "YYYY-MM-DDTHH:MM"
+  if (!rise || !set) return null;
+  const m = s => Number(s.slice(11, 13)) * 60 + Number(s.slice(14, 16));
+  const n = Math.round((m(rise) + m(set)) / 2);
+  return rise.slice(0, 11) + String(Math.floor(n / 60)).padStart(2, '0') + ':' + String(n % 60).padStart(2, '0');
+}
+
 /* ---------- data sources ---------- */
-const OM_HOURLY = 'temperature_2m,relative_humidity_2m,precipitation,snowfall,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,visibility,is_day';
+const OM_HOURLY = 'temperature_2m,relative_humidity_2m,precipitation,snowfall,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m,visibility,is_day,pressure_msl';
 const OM_DAILY = 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,sunrise,sunset,daylight_duration,uv_index_max';
 function getOM(lat, lon) {
   return getJSON('https://api.open-meteo.com/v1/forecast?' + qs({
@@ -459,7 +559,7 @@ async function getOMDay(lat, lon, date, today) {
   const hourly = 'temperature_2m,relative_humidity_2m,precipitation,snowfall,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m,wind_gusts_10m';
   const daily = 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,sunrise,sunset';
   try {
-    return await getJSON(url + qs(Object.assign({ hourly: hourly + ',is_day', daily: daily + ',daylight_duration' }, base)));
+    return await getJSON(url + qs(Object.assign({ hourly: hourly + ',is_day,pressure_msl', daily: daily + ',daylight_duration' }, base)));
   } catch (e) {
     return getJSON(url + qs(Object.assign({ hourly, daily }, base)));
   }
@@ -518,6 +618,7 @@ function nv(q, kind) {
     case 'temp': return u === 'degF' ? fToC(v) : v;
     case 'speed': return u === 'km_h-1' ? v / 3.6 : u === 'm_s-1' ? v : u === 'kn' ? v * 0.514444 : u === 'mi_h-1' ? v * 0.44704 : v / 3.6;
     case 'precip': return u === 'm' ? v * 1000 : u === 'mm' ? v : u === 'in' ? v * 25.4 : v;
+    case 'press': return u === 'hPa' ? v : v / 100;
     case 'dist': return u === 'km' ? v * 1000 : u === 'mi' ? v * 1609.34 : v;
     default: return v;
   }
@@ -539,7 +640,8 @@ function bucketObs(list, tz) {
     out.set(key, {
       delta, temp: nv(o.temperature, 'temp'), hum: nv(o.relativeHumidity), wind: nv(o.windSpeed, 'speed'),
       dir: nv(o.windDirection), gust: nv(o.windGust, 'speed'), vis: nv(o.visibility, 'dist'),
-      precip: nv(o.precipitationLastHour, 'precip'), cloud: obsCloud(o.cloudLayers)
+      precip: nv(o.precipitationLastHour, 'precip'), cloud: obsCloud(o.cloudLayers),
+      press: nv(o.seaLevelPressure, 'press') != null ? nv(o.seaLevelPressure, 'press') : nv(o.barometricPressure, 'press')
     });
   });
   return out;
@@ -655,11 +757,11 @@ function buildDay(date, c) {
     const h = {
       hour: hr, temp: at(H, 'temperature_2m', i), hum: at(H, 'relative_humidity_2m', i), wind: at(H, 'wind_speed_10m', i), dir: at(H, 'wind_direction_10m', i),
       gust: at(H, 'wind_gusts_10m', i), precip: at(H, 'precipitation', i), snow: at(H, 'snowfall', i), code: at(H, 'weather_code', i), cloud: at(H, 'cloud_cover', i),
-      vis: at(H, 'visibility', i), isDay: isDay == null ? (hr >= 7 && hr < 19) : isDay === 1, noaa: false
+      vis: at(H, 'visibility', i), press: at(H, 'pressure_msl', i), isDay: isDay == null ? (hr >= 7 && hr < 19) : isDay === 1, noaa: false
     };
     const o = c.obs && c.obs.get(date + 'T' + String(hr).padStart(2, '0'));
     if (o) {
-      ['temp', 'hum', 'wind', 'dir', 'gust', 'vis', 'cloud', 'precip'].forEach(k => { if (o[k] != null) { h[k] = o[k]; h.noaa = true; } });
+      ['temp', 'hum', 'wind', 'dir', 'gust', 'vis', 'cloud', 'precip', 'press'].forEach(k => { if (o[k] != null) { h[k] = o[k]; h.noaa = true; } });
       if (o.wind != null && o.gust == null) h.gust = null; // NWS omits gust when none was reported
     }
     h.kind = codeKind(h.code);
@@ -691,7 +793,7 @@ function buildDay(date, c) {
     date, hours, partial, hi, lo, pcpn, snow, cloud, kind, label, icon: iconFor(kind, cloud, true), sky: skyClass(kind, cloud),
     sunrise: at(D, 'sunrise', di), sunset: at(D, 'sunset', di), daylight: at(D, 'daylight_duration', di), uv: at(D, 'uv_index_max', di),
     humAvg: av('hum'), humMin: mn('hum'), humMax: mx('hum'), windMax: mx('wind'), gustMax: mx('gust'),
-    visMin: mn('vis'), visAvg: av('vis'), aqi: c.aqi || null, normal: c.normal || null, noaaHours: hours.some(h => h.noaa)
+    visMin: mn('vis'), visAvg: av('vis'), pressAvg: av('press'), pressMin: mn('press'), pressMax: mx('press'), aqi: c.aqi || null, normal: c.normal || null, noaaHours: hours.some(h => h.noaa)
   };
 }
 
@@ -785,10 +887,17 @@ const ICON = {
   pin: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 3 3 10.5l7.5 2.9L13.5 21z"/></svg>'
 };
 
-function placeLine(loc) {
-  return loc.isCurrent ? 'My Location' : [loc.admin, loc.cc === 'US' ? '' : loc.country].filter(Boolean).join(', ');
+function regionLine(loc) {
+  return [loc.admin, loc.cc && loc.cc !== 'US' ? loc.country : ''].filter(Boolean).join(', ');
 }
 
+// Start hourly strips at 11 AM (or as far as a shorter day allows).
+function scrollStrips(root) {
+  root.querySelectorAll('.hours').forEach(el => {
+    const c = el.children[11] || el.lastElementChild;
+    if (c) el.scrollLeft = c.offsetLeft - el.firstElementChild.offsetLeft;
+  });
+}
 function hourStrip(day, yday) {
   const lbl = US() ? ['', '', '°F', 'in', 'mph', 'RH'] : ['', '', '°C', 'mm', 'm/s', 'RH'];
   const cells = day.hours.map(h => {
@@ -842,7 +951,8 @@ function drawMain() {
   const loc = locs[S.index];
   const d = S.data.get(loc.id);
   if (!d) {
-    main.innerHTML = `<section class="hero"><div class="tag">${esc(placeLine(loc))}</div><div class="place">${esc(loc.name || 'My Location')}</div>`
+    main.innerHTML = `<section class="hero">${loc.isCurrent ? '<div class="tag">My Location</div>' : ''}<div class="place">${esc(loc.name || 'My Location')}</div>`
+      + (regionLine(loc) ? `<div class="region">${esc(regionLine(loc))}</div>` : '')
       + `<div class="when loading">Loading yesterday’s weather…</div></section>`;
     const id = loc.id;
     ensureData(loc).then(() => { const cur = allLocs()[S.index]; if (cur && cur.id === id) drawMain(); })
@@ -862,8 +972,9 @@ function drawMain() {
   const span = Math.max(1, allHi - allLo);
 
   let html = `<section class="hero">
-    <div class="tag">${esc(placeLine(loc))}</div>
+    ${loc.isCurrent ? '<div class="tag">My Location</div>' : ''}
     <h1 class="place">${esc(loc.name || 'My Location')}</h1>
+    ${regionLine(loc) ? `<div class="region">${esc(regionLine(loc))}</div>` : ''}
     <div class="when">Yesterday · ${fmtDate(y.date, { weekday: 'long', month: 'long', day: 'numeric' })}</div>
     <div class="big">${fT(y.hi.v)}</div>
     <div class="biglabel">High</div>
@@ -880,7 +991,7 @@ function drawMain() {
     const open = S.open.has(day.date);
     return `<div class="day${open ? ' open' : ''}" data-date="${day.date}">
       <button type="button" class="day-row" aria-expanded="${open}">
-        <span class="dn">${day.date === d.today ? 'Today' : day.date === d.yday ? 'Yest.' : fmtDate(day.date, { weekday: 'short' }) + ' ' + Number(day.date.slice(8))}</span>
+        <span class="dn">${day.date === d.today ? 'Today' : day.date === d.yday ? 'Yesterday' : fmtDate(day.date, { weekday: 'short' }) + ' ' + Number(day.date.slice(8))}</span>
         <span class="di">${day.icon}${pc}</span>
         <span class="lo">${fT(day.lo.v)}</span>
         <span class="bar"><i style="left:${left.toFixed(1)}%;width:${Math.min(width, 100 - left).toFixed(1)}%;background:linear-gradient(90deg,${tempColor(day.lo.v)},${tempColor(day.hi.v)})"></i></span>
@@ -900,6 +1011,7 @@ function drawMain() {
   html += `<p class="src" style="text-align:center;padding:4px 8px">${src.join(' ')} Times are local to ${esc(d.tz.replace(/_/g, ' '))}.</p>`;
 
   main.innerHTML = html;
+  scrollStrips(main);
   main.querySelectorAll('.day-row').forEach(b => b.addEventListener('click', () => {
     const date = b.parentElement.dataset.date;
     if (S.open.has(date)) S.open.delete(date); else S.open.add(date);
@@ -907,7 +1019,7 @@ function drawMain() {
     el.classList.toggle('open', S.open.has(date));
     b.setAttribute('aria-expanded', S.open.has(date));
     const old = el.querySelector('.day-detail'); if (old) old.remove();
-    if (S.open.has(date)) el.insertAdjacentHTML('beforeend', dayDetail(day, d));
+    if (S.open.has(date)) { el.insertAdjacentHTML('beforeend', dayDetail(day, d)); scrollStrips(el); }
   }));
   drawDetails(d);
 }
@@ -983,21 +1095,38 @@ function detailTiles(d, y, cl) {
     html += `<section class="card tile wide"><h3>Normals &amp; Records</h3><div class="note" style="padding:0">Normals and records come from NOAA and are available for US locations only.</div></section>`;
   }
   const na = 'Not available for this date';
+  const pair = (a, b) => html += a + b;
   // Sun
   const dl = y.daylight != null ? `${Math.floor(y.daylight / 3600)}h ${Math.round((y.daylight % 3600) / 60)}m of daylight` : '';
-  html += `<section class="card tile"><h3>Sunrise</h3><div class="val">${clockLabel(y.sunrise)}</div><div class="sub">Sunset ${clockLabel(y.sunset)}</div><div class="note">${dl}</div></section>`;
+  const sunTile = `<section class="card tile"><h3>Sun</h3><div class="times stack">`
+    + [['Sunrise', y.sunrise], ['Solar noon', solarNoon(y.sunrise, y.sunset)], ['Sunset', y.sunset]].map(([l, t]) => `<div><span>${l}</span><b>${clockLabel(t)}</b></div>`).join('')
+    + `</div><div class="note">${dl}</div></section>`;
   // UV
   const uvPos = y.uv == null ? 0 : Math.min(100, (y.uv / 11) * 100);
-  html += `<section class="card tile"><h3>UV Index</h3><div class="val">${y.uv == null ? '—' : Math.round(y.uv)}</div><div class="sub">${uvCat(y.uv)}</div>`
+  const uvTile = `<section class="card tile"><h3>UV Index</h3><div class="val">${y.uv == null ? '—' : Math.round(y.uv)}</div><div class="sub">${uvCat(y.uv)}</div>`
     + (y.uv == null ? `<div class="note">${na}</div>` : `<div class="scale uv"><b style="left:${uvPos.toFixed(1)}%"></b></div><div class="note">${y.partial ? 'Forecast maximum for today' : 'Daily maximum'}</div>`) + `</section>`;
-  // Visibility
-  html += `<section class="card tile"><h3>Visibility</h3><div class="val">${fVis(y.visMin)}</div><div class="sub">Lowest${so}</div><div class="note">${y.visMin == null ? na : 'Average ' + fVis(y.visAvg)}</div></section>`;
-  // Wind
-  html += `<section class="card tile"><h3>Wind</h3><div class="val">${fW(y.windMax)}</div><div class="sub">Strongest sustained</div><div class="note">${y.gustMax == null ? 'No gusts reported' : 'Gusts up to ' + fW(y.gustMax)}</div></section>`;
-  // Humidity
-  html += `<section class="card tile"><h3>Humidity</h3><div class="val">${y.humAvg == null ? '—' : Math.round(y.humAvg) + '%'}</div><div class="sub">Average${so}</div><div class="note">Range ${y.humMin == null ? '—' : Math.round(y.humMin) + '–' + Math.round(y.humMax) + '%'}</div></section>`;
-  // Precip
-  html += `<section class="card tile"><h3>Precipitation</h3><div class="val">${fP(y.pcpn.v, y.pcpn.trace)}</div><div class="sub">${y.snow.v > 0 ? 'Snow ' + fSnow(y.snow.v) : (y.partial ? 'So far today' : 'Total for the day')}</div><div class="note">Measured as liquid water; melted snow is included.</div></section>`;
+  pair(sunTile, uvTile);
+  // Moon
+  const mo = moonDay(y.date, d.tz, d.lat, d.lon);
+  html += `<section class="card tile wide"><h3>Moon</h3><div class="moon">
+      <div class="moon-ic" aria-hidden="true">${mo.icon}</div>
+      <div class="moon-main"><div class="sub" style="margin:0">${mo.name}</div><div class="note" style="padding:2px 0 0">${mo.pct}% illuminated</div></div>
+      <div class="times">${mo.events.length ? mo.events.map(e => `<div><span>${e.label}</span><b>${e.time}</b></div>`).join('')
+        : `<div><span>${mo.up ? 'Up all day' : 'Below the horizon all day'}</span></div>`}</div>
+    </div></section>`;
+  // Visibility + cloud cover
+  const cloudRange = vals => vals.length ? Math.round(Math.min(...vals)) + '–' + Math.round(Math.max(...vals)) + '%' : '—';
+  const clouds = y.hours.map(h => h.cloud).filter(v => v != null);
+  pair(`<section class="card tile"><h3>Visibility</h3><div class="val">${fVis(y.visMin)}</div><div class="sub">Lowest${so}</div><div class="note">${y.visMin == null ? na : 'Average ' + fVis(y.visAvg)}</div></section>`,
+    `<section class="card tile"><h3>Cloud Cover</h3><div class="val">${y.cloud == null ? '—' : Math.round(y.cloud) + '%'}</div><div class="sub">${cloudWord(y.cloud) || '—'}</div><div class="note">Average${so}; hourly range ${cloudRange(clouds)}</div></section>`);
+  // Wind + precipitation
+  pair(`<section class="card tile"><h3>Wind</h3><div class="val">${fW(y.windMax)}</div><div class="sub">Strongest sustained</div><div class="note">${y.gustMax == null ? 'No gusts reported' : 'Gusts up to ' + fW(y.gustMax)}</div></section>`,
+    `<section class="card tile"><h3>Precipitation</h3><div class="val">${fP(y.pcpn.v, y.pcpn.trace)}</div><div class="sub">${y.snow.v > 0 ? 'Snow ' + fSnow(y.snow.v) : (y.partial ? 'So far today' : 'Total for the day')}</div><div class="note">Measured as liquid water; melted snow is included.</div></section>`);
+  // Humidity + pressure
+  const pr = y.hours.filter(h => h.press != null), pd = pr.length > 1 ? pr[pr.length - 1].press - pr[0].press : null;
+  const trend = pd == null ? '' : pd > 1 ? 'Rising' : pd < -1 ? 'Falling' : 'Steady';
+  pair(`<section class="card tile"><h3>Humidity</h3><div class="val">${y.humAvg == null ? '—' : Math.round(y.humAvg) + '%'}</div><div class="sub">Average${so}</div><div class="note">Range ${y.humMin == null ? '—' : Math.round(y.humMin) + '–' + Math.round(y.humMax) + '%'}</div></section>`,
+    `<section class="card tile"><h3>Pressure</h3><div class="val">${fPress(y.pressAvg, true)}${y.pressAvg == null ? '' : `<span class="unit">${US() ? 'inHg' : 'hPa'}</span>`}</div><div class="sub">${trend ? trend + (trend === 'Rising' ? ' ↑' : trend === 'Falling' ? ' ↓' : '') : 'Average'}</div><div class="note">${pr.length ? `Average${so}; range ${fPress(y.pressMin, true)}–${fPress(y.pressMax)}` : na}</div></section>`);
   // AQI
   if (y.aqi) {
     const lo = y.aqi.min, hi = y.aqi.max, cl2 = aqiCat(lo.v), ch = aqiCat(hi.v);
