@@ -623,6 +623,18 @@ async function reverseName(lat, lon) {
   } catch (e) { return null; }
 }
 
+const US_STATES = {
+  AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California', CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware',
+  DC: 'District of Columbia', FL: 'Florida', GA: 'Georgia', HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois', IN: 'Indiana', IA: 'Iowa',
+  KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana', ME: 'Maine', MD: 'Maryland', MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota',
+  MS: 'Mississippi', MO: 'Missouri', MT: 'Montana', NE: 'Nebraska', NV: 'Nevada', NH: 'New Hampshire', NJ: 'New Jersey',
+  NM: 'New Mexico', NY: 'New York', NC: 'North Carolina', ND: 'North Dakota', OH: 'Ohio', OK: 'Oklahoma', OR: 'Oregon',
+  PA: 'Pennsylvania', RI: 'Rhode Island', SC: 'South Carolina', SD: 'South Dakota', TN: 'Tennessee', TX: 'Texas', UT: 'Utah',
+  VT: 'Vermont', VA: 'Virginia', WA: 'Washington', WV: 'West Virginia', WI: 'Wisconsin', WY: 'Wyoming',
+  PR: 'Puerto Rico', GU: 'Guam', VI: 'U.S. Virgin Islands', AS: 'American Samoa', MP: 'Northern Mariana Islands'
+};
+const stateName = s => (s && US_STATES[String(s).toUpperCase()]) || s || '';
+
 /* NWS (api.weather.gov) – US only */
 const NWS_H = { headers: { Accept: 'application/geo+json' } };
 async function getNwsPoint(lat, lon) {
@@ -631,7 +643,7 @@ async function getNwsPoint(lat, lon) {
   const st = await getJSON(p.properties.observationStations, NWS_H);
   const f = (st.features || [])[0];
   return {
-    city: rl ? rl.city : null, state: rl ? rl.state : null,
+    city: rl ? rl.city : null, state: rl ? stateName(rl.state) : null,
     station: f ? { id: f.properties.stationIdentifier, name: f.properties.name } : null
   };
 }
@@ -900,7 +912,7 @@ function ensureData(loc) {
   if (S.pending.has(loc.id)) return S.pending.get(loc.id);
   const p = loadLoc(loc).then(d => {
     S.data.set(loc.id, d); S.pending.delete(loc.id);
-    if (loc.isCurrent && d.place && !loc.named) { loc.name = d.place.name; loc.admin = d.place.admin; loc.named = true; }
+    if (loc.isCurrent && d.place && !loc.named) { loc.name = d.place.name; loc.admin = d.place.admin; loc.cc = 'US'; loc.country = 'United States'; loc.named = true; }
     return d;
   }, e => { S.pending.delete(loc.id); throw e; });
   S.pending.set(loc.id, p);
@@ -1125,7 +1137,7 @@ function detailTiles(d, y, cl) {
       <tr><td>Coldest</td><td>${recCell(M.lo)}</td></tr>
       <tr><td>Wettest month</td><td>${recCell(M.pcpn, true)}</td></tr>
       </tbody></table>` : ''}
-      <div class="src">NOAA station: ${esc(c.name)}${c.state ? ', ' + esc(c.state) : ''} (${Math.round(c.dist * (US() ? 0.621 : 1))} ${US() ? 'mi' : 'km'} away). Normals are 1991–2020; records cover the station’s full history.</div></section>`;
+      <div class="src">NOAA station: ${esc(c.name)}${c.state ? ', ' + esc(stateName(c.state)) : ''} (${Math.round(c.dist * (US() ? 0.621 : 1))} ${US() ? 'mi' : 'km'} away). Normals are 1991–2020; records cover the station’s full history.</div></section>`;
   } else {
     html += `<section class="card tile wide"><h3>Normals &amp; Records</h3><div class="note" style="padding:0">Normals and records come from NOAA and are available for US locations only.</div></section>`;
   }
