@@ -165,9 +165,9 @@ table.climo td small { display: block; font-size: 11px; color: var(--fg-dim); }
   width: min(360px, calc(100vw - 24px)); padding: 14px; border-radius: 16px; background: var(--sheet-bg); color: var(--fg);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45); display: flex; flex-direction: column; gap: 10px;
 }
-.units-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.units-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; }
 .units-row > span { font-size: 14px; color: var(--fg-dim); }
-.units-row .seg button { padding: 6px 10px; }
+.units-row .seg button { padding: 6px 9px; }
 .units-done { align-self: flex-end; font-weight: 600; font-size: 16px; padding: 4px 2px; }
 .units-open { font-size: 15px; font-weight: 600; color: var(--fg); background: var(--input-bg); border-radius: 9px; padding: 7px 12px; }
 
@@ -408,9 +408,9 @@ function localParts(date, tz) {
 /* ---------- units (internal: °C, m/s, mm, cm snow, m visibility) ---------- */
 const UNIT_OPTS = {
   temp: { label: 'Temperature', opts: [['F', '°F'], ['C', '°C']] },
-  wind: { label: 'Wind', opts: [['mph', 'mph'], ['kmh', 'km/h'], ['ms', 'm/s'], ['kn', 'knots']] },
+  wind: { label: 'Wind', opts: [['mph', 'mph'], ['kmh', 'km/h'], ['ms', 'm/s'], ['fts', 'ft/s'], ['kn', 'knots']] },
   precip: { label: 'Precipitation', opts: [['in', 'in'], ['mm', 'mm']] },
-  pressure: { label: 'Pressure', opts: [['inHg', 'inHg'], ['hPa', 'hPa'], ['mmHg', 'mmHg']] },
+  pressure: { label: 'Pressure', opts: [['inHg', 'inHg'], ['hPa', 'hPa'], ['mbar', 'mbar'], ['kPa', 'kPa'], ['mmHg', 'mmHg']] },
   distance: { label: 'Distance', opts: [['mi', 'mi'], ['km', 'km']] }
 };
 const UNIT_PRESETS = {
@@ -433,7 +433,7 @@ function fT(c) { if (c == null || isNaN(c)) return '—'; return Math.round(isF(
 function fTdiff(dc) { const v = Math.round(isF() ? dc * 9 / 5 : dc); return (v > 0 ? '+' : '') + v + '°'; }
 function windNum(ms) {
   if (ms == null) return '—';
-  const f = { mph: 2.23694, kmh: 3.6, kn: 1.94384 }[U().wind];
+  const f = { mph: 2.23694, kmh: 3.6, fts: 3.28084, kn: 1.94384 }[U().wind];
   if (f) return String(Math.round(ms * f));
   return ms < 10 ? ms.toFixed(1) : String(Math.round(ms));
 }
@@ -452,7 +452,8 @@ function fSnow(cm, trace) { if (trace) return 'Trace'; return cm == null ? '—'
 const snowy = day => day.snow && day.snow.v >= 0.25;
 function fPress(hpa, bare) {
   if (hpa == null) return '—';
-  const p = U().pressure, n = p === 'inHg' ? (hpa * 0.02953).toFixed(2) : p === 'mmHg' ? String(Math.round(hpa * 0.750062)) : String(Math.round(hpa));
+  const p = U().pressure, n = p === 'inHg' ? (hpa * 0.02953).toFixed(2) : p === 'mmHg' ? String(Math.round(hpa * 0.750062))
+    : p === 'kPa' ? (hpa / 10).toFixed(1) : String(Math.round(hpa)); // hPa and mbar are the same size
   return n + (bare ? '' : ' ' + p);
 }
 const isMi = () => U().distance === 'mi';
