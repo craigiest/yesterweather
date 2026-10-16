@@ -171,7 +171,30 @@ table.climo td small { display: block; font-size: 11px; color: var(--fg-dim); }
 }
 .dbtn:disabled { opacity: 0.35; cursor: default; }
 .dcal svg { width: 18px; height: 18px; }
-.dcal input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: 0; padding: 0; margin: 0; cursor: pointer; font-size: 16px; }
+.cal-wrap { position: fixed; inset: 0; z-index: 20; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, 0.45); }
+@media (min-width: 560px) { .cal-wrap { align-items: center; } }
+.cal {
+  width: 100%; max-width: 420px; background: var(--sheet-bg); color: var(--fg); border-radius: 18px 18px 0 0;
+  padding-top: 14px; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 12px; font-variant-numeric: tabular-nums;
+}
+@media (min-width: 560px) { .cal { border-radius: 18px; } }
+.cal-head { display: flex; align-items: center; justify-content: space-between; }
+.cal-head h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.cal-head button { font-size: 16px; font-weight: 600; }
+.cal-nav { display: flex; align-items: center; gap: 8px; }
+.cal-nav .arrow { width: 36px; height: 36px; border-radius: 50%; font-size: 24px; line-height: 1; background: var(--input-bg); flex: none; }
+.cal-nav .arrow:disabled { opacity: 0.3; cursor: default; }
+.cal-nav select { flex: 1; min-width: 0; font: inherit; font-size: 16px; font-weight: 600; color: var(--fg); background: var(--input-bg); border: 0; border-radius: 9px; padding: 8px 10px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
+.cal-grid .wd { font-size: 11px; font-weight: 600; color: var(--fg-dim); padding-bottom: 2px; }
+.cal-grid button { aspect-ratio: 1; max-width: 100%; border-radius: 50%; font-size: 16px; }
+.cal-grid button:disabled { opacity: 0.25; cursor: default; }
+.cal-grid button.today { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.6); }
+.cal-grid button.on { background: #fff; color: #111; font-weight: 700; }
+.cal-quick { display: flex; gap: 8px; }
+.cal-quick button { flex: 1; padding: 9px; border-radius: 10px; background: var(--input-bg); font-weight: 600; font-size: 15px; }
 .dlabel { flex: 1; min-width: 0; text-align: center; display: flex; flex-direction: column; align-items: center; text-shadow: 0 1px 6px rgba(0,0,0,0.12); }
 .dlabel small { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-dim); }
 .dlabel b { font-size: 20px; font-weight: 600; }
@@ -1050,16 +1073,14 @@ function drawDetails(d) {
       <div class="dlabel"><small>Day details</small><b>${dayName(d, date)}${date === d.today ? ' so far' : ''}</b><span>${dayFull(d, date)}</span>
         ${date !== d.yday ? '<button type="button" class="dback" id="dBack">Back to yesterday</button>' : ''}</div>
       <button type="button" class="dbtn" id="dNext" aria-label="Next day"${date >= d.today ? ' disabled' : ''}>›</button>
-      <span class="dbtn dcal">${ICON.cal}<input type="date" id="dPick" min="${MIN_DATE}" max="${d.today}" value="${date}" aria-label="Choose a date"></span>
+      <button type="button" class="dbtn dcal" id="dPick" aria-label="Choose a date" aria-haspopup="dialog">${ICON.cal}</button>
     </div>`;
   const wire = () => {
     const set = v => { S.sel = v; drawDetails(d); };
     $('dPrev').onclick = () => set(addDays(date, -1));
     $('dNext').onclick = () => set(addDays(date, 1));
     const back = $('dBack'); if (back) back.onclick = () => set(null);
-    const pick = $('dPick');
-    pick.onclick = () => { try { pick.showPicker(); } catch (e) {} };
-    pick.onchange = () => { const v = pick.value; if (/^\d{4}-\d{2}-\d{2}$/.test(v) && v >= MIN_DATE && v <= d.today) set(v); };
+    $('dPick').onclick = () => openCal(date, d.today, set);
   };
   // Keep the current tiles in place (contents hidden) while another day loads, so the page doesn't jump.
   if (!box.firstElementChild) box.innerHTML = '<div class="dnav-slot"></div><div class="dbody"></div>';
@@ -1188,6 +1209,63 @@ function go(i) {
   drawMain(); window.scrollTo(0, 0);
 }
 
+
+/* ---------- calendar picker (closes only when a day is chosen) ---------- */
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+let calState = null;
+function openCal(selected, today, onPick) {
+  calState = { sel: selected, today, onPick, y: +selected.slice(0, 4), m: +selected.slice(5, 7) - 1, back: document.activeElement };
+  let wrap = $('calWrap');
+  if (!wrap) {
+    wrap = document.createElement('div'); wrap.id = 'calWrap'; wrap.className = 'cal-wrap';
+    wrap.addEventListener('click', e => { if (e.target === wrap) closeCal(); });
+    document.body.appendChild(wrap);
+  }
+  wrap.hidden = false; document.body.style.overflow = 'hidden';
+  drawCal();
+  const on = wrap.querySelector('.cal-grid .on'); (on || wrap.querySelector('.cal-head button')).focus();
+}
+function closeCal() {
+  const wrap = $('calWrap'); if (!wrap || wrap.hidden) return;
+  wrap.hidden = true;
+  if ($('sheet').hidden) document.body.style.overflow = '';
+  if (calState && calState.back && calState.back.isConnected) calState.back.focus();
+}
+function drawCal() {
+  const c = calState, wrap = $('calWrap');
+  const minY = +MIN_DATE.slice(0, 4), maxY = +c.today.slice(0, 4), maxM = +c.today.slice(5, 7) - 1;
+  if (c.y > maxY || (c.y === maxY && c.m > maxM)) { c.y = maxY; c.m = maxM; }
+  if (c.y < minY) { c.y = minY; c.m = 0; }
+  const pad = n => String(n).padStart(2, '0');
+  const first = new Date(Date.UTC(c.y, c.m, 1)), lead = first.getUTCDay(), count = new Date(Date.UTC(c.y, c.m + 1, 0)).getUTCDate();
+  const atStart = c.y === minY && c.m === 0, atEnd = c.y === maxY && c.m === maxM;
+  let years = ''; for (let y = maxY; y >= minY; y--) years += `<option value="${y}"${y === c.y ? ' selected' : ''}>${y}</option>`;
+  const months = MONTHS.map((n, i) => `<option value="${i}"${i === c.m ? ' selected' : ''}${c.y === maxY && i > maxM ? ' disabled' : ''}>${n}</option>`).join('');
+  let cells = ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(w => `<span class="wd">${w}</span>`).join('') + '<span></span>'.repeat(lead);
+  for (let day = 1; day <= count; day++) {
+    const ymd = `${c.y}-${pad(c.m + 1)}-${pad(day)}`, off = ymd > c.today || ymd < MIN_DATE;
+    cells += `<button type="button" data-d="${ymd}" class="${ymd === c.sel ? 'on' : ''}${ymd === c.today ? ' today' : ''}"${off ? ' disabled' : ''} aria-label="${MONTHS[c.m]} ${day}, ${c.y}">${day}</button>`;
+  }
+  wrap.innerHTML = `<div class="cal" role="dialog" aria-modal="true" aria-label="Choose a date">
+    <div class="cal-head"><h2>Choose a date</h2><button type="button" id="calClose">Cancel</button></div>
+    <div class="cal-nav">
+      <button type="button" class="arrow" id="calPrev" aria-label="Previous month"${atStart ? ' disabled' : ''}>‹</button>
+      <select id="calMonth" aria-label="Month">${months}</select>
+      <select id="calYear" aria-label="Year">${years}</select>
+      <button type="button" class="arrow" id="calNext" aria-label="Next month"${atEnd ? ' disabled' : ''}>›</button>
+    </div>
+    <div class="cal-grid">${cells}</div>
+    <div class="cal-quick"><button type="button" data-d="${c.today}">Today</button><button type="button" data-d="${addDays(c.today, -1)}">Yesterday</button></div>
+  </div>`;
+  const step = n => { c.m += n; if (c.m < 0) { c.m = 11; c.y--; } if (c.m > 11) { c.m = 0; c.y++; } drawCal(); };
+  $('calClose').onclick = closeCal;
+  $('calPrev').onclick = () => step(-1);
+  $('calNext').onclick = () => step(1);
+  $('calMonth').onchange = e => { c.m = +e.target.value; drawCal(); $('calMonth').focus(); };
+  $('calYear').onchange = e => { c.y = +e.target.value; drawCal(); $('calYear').focus(); };
+  wrap.querySelectorAll('button[data-d]').forEach(b => b.onclick = () => { const v = b.dataset.d; closeCal(); c.onPick(v); });
+}
+
 /* ---------- locations sheet ---------- */
 function openSheet(focusSearch) {
   $('sheet').hidden = false; document.body.style.overflow = 'hidden';
@@ -1280,7 +1358,11 @@ $('main').addEventListener('click', e => {
   S.sel = b.dataset.date; drawDetails(d);
   const box = $('details'); if (box) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('sheet').hidden) closeSheet(); });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const cw = $('calWrap');
+  if (cw && !cw.hidden) closeCal(); else if (!$('sheet').hidden) closeSheet();
+});
 
 // Horizontal swipe between locations (ignored when the swipe starts inside a scrolling hour strip)
 let tx = null, ty = 0;
