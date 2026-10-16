@@ -269,7 +269,12 @@ table.climo td small { display: block; font-size: 11px; color: var(--fg-dim); }
 .loc-card .hi { font-size: 40px; font-weight: 300; line-height: 1; text-align: right; font-variant-numeric: tabular-nums; }
 .loc-card .cd { font-size: 14px; font-weight: 500; align-self: end; }
 .loc-card .hl { font-size: 14px; font-weight: 500; text-align: right; align-self: end; font-variant-numeric: tabular-nums; }
-.loc-wrap { position: relative; display: flex; align-items: center; gap: 10px; }
+.loc-wrap { position: relative; display: flex; align-items: center; gap: 10px; transition: transform 0.2s ease; }
+.loc-wrap.lifted { z-index: 2; transition: none; filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.45)); }
+.loc-swipe { position: relative; flex: 1; min-width: 0; border-radius: 16px; overflow: hidden; }
+.loc-swipe .loc-card { position: relative; z-index: 1; transition: transform 0.22s ease; touch-action: pan-y; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.loc-swipe .loc-card.moving { transition: none; }
+.swipe-del { position: absolute; top: 0; right: 0; bottom: 0; width: 120px; padding-left: 32px; background: #e5443a; color: #fff; font-weight: 600; font-size: 15px; }
 .loc-wrap .del { flex: none; width: 28px; height: 28px; border-radius: 50%; background: #e5443a; color: #fff; font-size: 18px; font-weight: 700; line-height: 1; }
 .about { font-size: 12px; color: var(--fg-dim); line-height: 1.5; margin-top: 8px; }
 .about a { color: inherit; }
@@ -928,8 +933,11 @@ const ICON = {
   pin: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21 3 3 10.5l7.5 2.9L13.5 21z"/></svg>'
 };
 
+// US and Canadian places show their state or province; places elsewhere show their country.
 function regionLine(loc) {
-  return [loc.admin, loc.cc && loc.cc !== 'US' ? loc.country : ''].filter(Boolean).join(', ');
+  const cc = String(loc.cc || '').toUpperCase();
+  if (cc === 'US' || cc === 'CA') return loc.admin || '';
+  return loc.country || loc.admin || '';
 }
 
 // Start hourly strips at 11 AM (or as far as a shorter day allows).
@@ -1306,6 +1314,8 @@ function closeSheet() {
   drawMain();
 }
 function drawSheet() {
+  if (G.active && G.active.mode) { S.sheetDirty = true; return; } // don't redraw under a finger mid-gesture
+  openSwipe = null;
   $('segUS').classList.toggle('on', US()); $('segSI').classList.toggle('on', !US());
   $('editBtn').textContent = S.editing ? 'Cancel' : 'Edit';
   $('editBtn').hidden = !S.saved.length;
@@ -1322,16 +1332,13 @@ function drawSheet() {
     if (full) { const y = full.days.find(x => x.date === full.yday); hi = fT(y.hi.v); lo = fT(y.lo.v); cond = y.label; sky = y.sky; }
     else if (lite) { hi = fT(lite.hi); lo = fT(lite.lo); cond = lite.label; sky = lite.sky; }
     const card = `<button type="button" class="loc-card ${sky}" data-i="${i}">
-      <span><span class="nm">${esc(l.isCurrent ? 'My Location' : l.name)}</span><br><span class="rg">${esc(l.isCurrent ? (l.name || '') : [l.admin, l.country].filter(Boolean).join(', '))}</span></span>
+      <span><span class="nm">${esc(l.isCurrent ? 'My Location' : l.name)}</span><br><span class="rg">${esc(l.isCurrent ? (l.name || '') : regionLine(l))}</span></span>
       <span class="hi">${hi}</span><span class="cd">${cond ? 'Yesterday · ' + esc(cond) : ''}</span><span class="hl">${hi ? 'H:' + hi + ' L:' + lo : ''}</span></button>`;
-    const del = S.editing && !l.isCurrent ? `<button type="button" class="del" data-id="${esc(l.id)}" aria-label="Remove ${esc(l.name)}">−</button>` : '';
-    return `<div class="loc-wrap">${del}${card}</div>`;
+    if (l.isCurrent) return `<div class="loc-wrap"><div class="loc-swipe">${card}</div></div>`;
+    const del = S.editing ? `<button type="button" class="del" data-del="${esc(l.id)}" aria-label="Delete ${esc(l.name)}">−</button>` : '';
+    return `<div class="loc-wrap" data-id="${esc(l.id)}">${del}<div class="loc-swipe">`
+      + `<button type="button" class="swipe-del" data-del="${esc(l.id)}" tabindex="-1" aria-label="Delete ${esc(l.name)}">Delete</button>${card}</div></div>`;
   }).join('');
-  $('locList').querySelectorAll('.loc-card').forEach(b => b.onclick = () => { if (S.editing) return; S.index = Number(b.dataset.i); S.open.clear(); S.sel = null; closeSheet(); window.scrollTo(0, 0); });
-  $('locList').querySelectorAll('.del').forEach(b => b.onclick = () => {
-    S.saved = S.saved.filter(x => x.id !== b.dataset.id); store.set('yw.locs', S.saved);
-    S.index = 0; if (!S.saved.length) S.editing = false; drawSheet();
-  });
   locs.forEach(l => { if (!S.data.has(l.id) && !S.light.has(l.id)) loadLight(l); });
 }
 function loadLight(l) {
@@ -1349,6 +1356,107 @@ function loadLight(l) {
   }).catch(() => {});
 }
 
+
+/* ---------- location list gestures: hold-and-drag to reorder, swipe left to delete ---------- */
+const G = { active: null, noClickUntil: 0 };
+const SWIPE_W = 88, LIST_GAP = 10;
+let openSwipe = null;
+function closeSwipe(except) {
+  if (openSwipe && openSwipe !== except) { openSwipe.style.transform = ''; openSwipe = null; }
+}
+function deleteLoc(id) {
+  const cur = allLocs()[S.index], curId = cur && cur.id;
+  S.saved = S.saved.filter(x => x.id !== id); store.set('yw.locs', S.saved);
+  S.data.delete(id); S.light.delete(id);
+  const i = allLocs().findIndex(x => x.id === curId);
+  S.index = i < 0 ? 0 : i;
+  if (!S.saved.length) S.editing = false;
+  drawSheet();
+}
+function startDrag() {
+  const g = G.active; if (!g || g.mode) return;
+  g.mode = 'drag'; closeSwipe();
+  try { if (navigator.vibrate) navigator.vibrate(10); } catch (e) {}
+  g.wraps = Array.from($('locList').querySelectorAll('.loc-wrap[data-id]'));
+  g.from = g.to = g.wraps.indexOf(g.wrap);
+  g.rects = g.wraps.map(w => w.getBoundingClientRect());
+  g.wrap.classList.add('lifted');
+  moveDrag(g.y0);
+}
+function moveDrag(y) {
+  const g = G.active, dy = y - g.y0, r0 = g.rects[g.from];
+  g.wrap.style.transform = `translateY(${dy}px) scale(1.03)`;
+  const center = r0.top + r0.height / 2 + dy;
+  let to = g.from;
+  g.rects.forEach((r, i) => {
+    const mid = r.top + r.height / 2;
+    if (i < g.from && center < mid) to = Math.min(to, i);
+    if (i > g.from && center > mid) to = Math.max(to, i);
+  });
+  g.to = to;
+  const shift = r0.height + LIST_GAP;
+  g.wraps.forEach((w, i) => {
+    if (i === g.from) return;
+    const t = (g.from < to && i > g.from && i <= to) ? -shift : (to < g.from && i >= to && i < g.from) ? shift : 0;
+    w.style.transform = t ? `translateY(${t}px)` : '';
+  });
+}
+function endGesture(e) {
+  const g = G.active; if (!g || e.pointerId !== g.pid) return;
+  clearTimeout(g.timer); G.active = null;
+  if (g.mode === 'swipe') {
+    G.noClickUntil = Date.now() + 400;
+    g.card.classList.remove('moving');
+    const x = Math.min(0, g.base + g.dx);
+    if (x < -g.card.offsetWidth * 0.6) { deleteLoc(g.id); return; }       // a long swipe deletes outright
+    if (x < -SWIPE_W / 2) { g.card.style.transform = `translateX(${-SWIPE_W}px)`; openSwipe = g.card; }
+    else { g.card.style.transform = ''; if (openSwipe === g.card) openSwipe = null; }
+  } else if (g.mode === 'drag') {
+    G.noClickUntil = Date.now() + 400;
+    if (g.to !== g.from) {
+      const cur = allLocs()[S.index], curId = cur && cur.id;
+      const [m] = S.saved.splice(g.from, 1); S.saved.splice(g.to, 0, m); store.set('yw.locs', S.saved);
+      S.index = Math.max(0, allLocs().findIndex(x => x.id === curId));
+    }
+    S.sheetDirty = true;
+  }
+  if (S.sheetDirty) { S.sheetDirty = false; drawSheet(); }
+}
+(function initListGestures() {
+  const list = $('locList');
+  list.addEventListener('pointerdown', e => {
+    if (e.button > 0 || S.editing) return;
+    const card = e.target.closest('.loc-card'); if (!card) return;
+    const wrap = card.closest('.loc-wrap');
+    if (!wrap.dataset.id) { closeSwipe(); return; }   // My Location stays put
+    G.active = { wrap, card, id: wrap.dataset.id, pid: e.pointerId, x0: e.clientX, y0: e.clientY, dx: 0, dy: 0, mode: null, base: card === openSwipe ? -SWIPE_W : 0 };
+    G.active.timer = setTimeout(startDrag, 450);
+  });
+  window.addEventListener('pointermove', e => {
+    const g = G.active; if (!g || e.pointerId !== g.pid) return;
+    g.dx = e.clientX - g.x0; g.dy = e.clientY - g.y0;
+    if (!g.mode) {
+      if (Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy)) { g.mode = 'swipe'; clearTimeout(g.timer); closeSwipe(g.card); g.card.classList.add('moving'); }
+      else if (Math.abs(g.dy) > 8) { clearTimeout(g.timer); G.active = null; return; }   // a vertical move before the hold is a scroll
+    }
+    if (g.mode === 'swipe') g.card.style.transform = `translateX(${Math.min(0, g.base + g.dx)}px)`;
+    else if (g.mode === 'drag') moveDrag(e.clientY);
+  });
+  window.addEventListener('pointerup', endGesture);
+  window.addEventListener('pointercancel', endGesture);
+  // Stop the page from scrolling while a card is being dragged or swiped.
+  list.addEventListener('touchmove', e => { if (G.active && G.active.mode) e.preventDefault(); }, { passive: false });
+  list.addEventListener('contextmenu', e => { if (e.target.closest('.loc-card')) e.preventDefault(); });
+  list.addEventListener('click', e => {
+    const del = e.target.closest('[data-del]');
+    if (del) { deleteLoc(del.dataset.del); return; }
+    const card = e.target.closest('.loc-card'); if (!card) return;
+    if (Date.now() < G.noClickUntil || S.editing) return;
+    if (openSwipe) { closeSwipe(); return; }       // a tap while a row is open just closes it
+    S.index = Number(card.dataset.i); S.open.clear(); S.sel = null; closeSheet(); window.scrollTo(0, 0);
+  });
+})();
+
 let searchTimer = 0, searchSeq = 0;
 $('q').addEventListener('input', () => {
   clearTimeout(searchTimer);
@@ -1361,7 +1469,7 @@ $('q').addEventListener('input', () => {
     try { res = await geocode(q); } catch (e) { if (seq === searchSeq) $('results').innerHTML = '<div class="none">Search isn’t available right now. Check your connection and try again.</div>'; return; }
     if (seq !== searchSeq) return;
     if (!res.length) { $('results').innerHTML = `<div class="none">No places match “${esc(q)}”.</div>`; return; }
-    $('results').innerHTML = res.map((r, i) => `<button type="button" data-i="${i}">${esc(r.name)}<span>${esc([', ' + r.admin, r.country].filter(x => x && x !== ', ').join(', ').replace(/^, /, ', '))}</span></button>`).join('');
+    $('results').innerHTML = res.map((r, i) => `<button type="button" data-i="${i}">${esc(r.name)}<span>${regionLine(r) ? ', ' + esc(regionLine(r)) : ''}</span></button>`).join('');
     $('results').querySelectorAll('button').forEach(b => b.onclick = () => addLoc(res[Number(b.dataset.i)]));
   }, 300);
 });
