@@ -1121,7 +1121,7 @@ function detailTiles(d, y, cl) {
     `<section class="card tile"><h3>Cloud Cover</h3><div class="val">${y.cloud == null ? '—' : Math.round(y.cloud) + '%'}</div><div class="sub">${cloudWord(y.cloud) || '—'}</div><div class="note">Average${so}; hourly range ${cloudRange(clouds)}</div></section>`);
   // Wind + precipitation
   pair(`<section class="card tile"><h3>Wind</h3><div class="val">${fW(y.windMax)}</div><div class="sub">Strongest sustained</div><div class="note">${y.gustMax == null ? 'No gusts reported' : 'Gusts up to ' + fW(y.gustMax)}</div></section>`,
-    `<section class="card tile"><h3>Precipitation</h3><div class="val">${fP(y.pcpn.v, y.pcpn.trace)}</div><div class="sub">${y.snow.v > 0 ? 'Snow ' + fSnow(y.snow.v) : (y.partial ? 'So far today' : 'Total for the day')}</div><div class="note">Measured as liquid water; melted snow is included.</div></section>`);
+    `<section class="card tile"><h3>Precipitation</h3><div class="val">${fP(y.pcpn.v, y.pcpn.trace)}</div><div class="sub">${y.snow.v > 0 ? 'Snow ' + fSnow(y.snow.v) : (y.partial ? 'So far today' : 'Total for the day')}</div></section>`);
   // Humidity + pressure
   const pr = y.hours.filter(h => h.press != null), pd = pr.length > 1 ? pr[pr.length - 1].press - pr[0].press : null;
   const trend = pd == null ? '' : pd > 1 ? 'Rising' : pd < -1 ? 'Falling' : 'Steady';
