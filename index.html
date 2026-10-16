@@ -158,6 +158,19 @@ table.climo td small { display: block; font-size: 11px; color: var(--fg-dim); }
 .tile .val .unit { font-size: 17px; margin-left: 5px; color: var(--fg-dim); }
 @media (max-width: 380px) { .moon { grid-template-columns: auto 1fr; } .moon .times { grid-column: 1 / -1; } }
 
+/* Units menu */
+.units-pop { position: fixed; inset: 0; z-index: 25; }
+.units-panel {
+  position: absolute; left: max(12px, env(safe-area-inset-left, 0px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 62px);
+  width: min(360px, calc(100vw - 24px)); padding: 14px; border-radius: 16px; background: var(--sheet-bg); color: var(--fg);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45); display: flex; flex-direction: column; gap: 10px;
+}
+.units-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.units-row > span { font-size: 14px; color: var(--fg-dim); }
+.units-row .seg button { padding: 6px 10px; }
+.units-done { align-self: flex-end; font-weight: 600; font-size: 16px; padding: 4px 2px; }
+.units-open { font-size: 15px; font-weight: 600; color: var(--fg); background: var(--input-bg); border-radius: 9px; padding: 7px 12px; }
+
 /* Day details navigation */
 #details, .dbody { display: flex; flex-direction: column; gap: 12px; }
 .dbody.pending .card > :not(h3), .dbody.pending > .src { visibility: hidden; }
@@ -297,7 +310,7 @@ table.climo td small { display: block; font-size: 11px; color: var(--fg-dim); }
 </main>
 
 <nav class="bar-bottom" aria-label="Controls">
-  <button class="btn" id="unitBtn" type="button" aria-label="Switch units">°F</button>
+  <button class="btn" id="unitBtn" type="button" aria-label="Units" aria-haspopup="dialog">°F</button>
   <div class="dots" id="dots"></div>
   <button class="btn" id="listBtn" type="button" aria-label="Locations">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1.2" fill="currentColor"/><circle cx="3.5" cy="12" r="1.2" fill="currentColor"/><circle cx="3.5" cy="18" r="1.2" fill="currentColor"/></svg>
@@ -322,10 +335,7 @@ table.climo td small { display: block; font-size: 11px; color: var(--fg-dim); }
     <div class="loc-list" id="locList"></div>
     <div class="sheet-head" style="margin-top:6px">
       <span class="notice">Units</span>
-      <div class="seg" role="group" aria-label="Units">
-        <button type="button" data-u="us" id="segUS">US (°F, mph, in)</button>
-        <button type="button" data-u="si" id="segSI">SI (°C, m/s, mm)</button>
-      </div>
+      <button type="button" class="units-open" id="unitsOpen" aria-haspopup="dialog"><span id="unitsSummary"></span> ›</button>
     </div>
     <p class="about">
       Daily highs, lows, precipitation, normals (1991–2020) and records come from NOAA station data via
@@ -347,7 +357,7 @@ const store = {
 };
 
 const S = {
-  units: store.get('yw.units', 'us'),
+  units: null,            // filled by loadUnits() below
   saved: store.get('yw.locs', []),
   current: null,          // {id:'here', lat, lon, name, admin, isCurrent:true}
   geoState: 'pending',    // pending | ok | denied | unsupported
@@ -396,24 +406,58 @@ function localParts(date, tz) {
 }
 
 /* ---------- units (internal: °C, m/s, mm, cm snow, m visibility) ---------- */
-const US = () => S.units === 'us';
+const UNIT_OPTS = {
+  temp: { label: 'Temperature', opts: [['F', '°F'], ['C', '°C']] },
+  wind: { label: 'Wind', opts: [['mph', 'mph'], ['kmh', 'km/h'], ['ms', 'm/s'], ['kn', 'knots']] },
+  precip: { label: 'Precipitation', opts: [['in', 'in'], ['mm', 'mm']] },
+  pressure: { label: 'Pressure', opts: [['inHg', 'inHg'], ['hPa', 'hPa'], ['mmHg', 'mmHg']] },
+  distance: { label: 'Distance', opts: [['mi', 'mi'], ['km', 'km']] }
+};
+const UNIT_PRESETS = {
+  us: { temp: 'F', wind: 'mph', precip: 'in', pressure: 'inHg', distance: 'mi' },
+  si: { temp: 'C', wind: 'ms', precip: 'mm', pressure: 'hPa', distance: 'km' }
+};
+function loadUnits() {
+  const saved = store.get('yw.unitset', null), old = store.get('yw.units', 'us');
+  const u = Object.assign({}, UNIT_PRESETS[old === 'si' ? 'si' : 'us']);
+  if (saved && typeof saved === 'object') Object.keys(UNIT_OPTS).forEach(k => { if (UNIT_OPTS[k].opts.some(o => o[0] === saved[k])) u[k] = saved[k]; });
+  return u;
+}
+S.units = loadUnits();
+const U = () => S.units;
+const unitLabel = k => UNIT_OPTS[k].opts.find(o => o[0] === S.units[k])[1];
 const cToF = c => c * 9 / 5 + 32;
 const fToC = f => (f - 32) * 5 / 9;
-function fT(c) { if (c == null || isNaN(c)) return '—'; return Math.round(US() ? cToF(c) : c) + '°'; }
-function fTdiff(dc) { const v = Math.round(US() ? dc * 9 / 5 : dc); return (v > 0 ? '+' : '') + v + '°'; }
-function windNum(ms) { if (ms == null) return '—'; if (US()) return String(Math.round(ms * 2.23694)); return ms < 10 ? ms.toFixed(1) : String(Math.round(ms)); }
-function fW(ms) { return ms == null ? '—' : windNum(ms) + (US() ? ' mph' : ' m/s'); }
+const isF = () => U().temp === 'F';
+function fT(c) { if (c == null || isNaN(c)) return '—'; return Math.round(isF() ? cToF(c) : c) + '°'; }
+function fTdiff(dc) { const v = Math.round(isF() ? dc * 9 / 5 : dc); return (v > 0 ? '+' : '') + v + '°'; }
+function windNum(ms) {
+  if (ms == null) return '—';
+  const f = { mph: 2.23694, kmh: 3.6, kn: 1.94384 }[U().wind];
+  if (f) return String(Math.round(ms * f));
+  return ms < 10 ? ms.toFixed(1) : String(Math.round(ms));
+}
+function fW(ms) { return ms == null ? '—' : windNum(ms) + ' ' + unitLabel('wind'); }
+const precipIn = () => U().precip === 'in';
 function precipNum(mm, trace) {
   if (trace) return 'Trace';
   if (mm == null) return '—';
-  return US() ? (mm / 25.4).toFixed(2) : mm.toFixed(1);
+  return precipIn() ? (mm / 25.4).toFixed(2) : mm.toFixed(1);
 }
-function fP(mm, trace) { const n = precipNum(mm, trace); return (n === 'Trace' || n === '—') ? n : n + (US() ? ' in' : ' mm'); }
-function fSnow(cm, trace) { if (trace) return 'Trace'; return cm == null ? '—' : (US() ? (cm / 2.54).toFixed(1) + ' in' : cm.toFixed(1) + ' cm'); }
+function fP(mm, trace) { const n = precipNum(mm, trace); return (n === 'Trace' || n === '—') ? n : n + ' ' + unitLabel('precip'); }
+// Snow depth follows the precipitation setting: inches, or centimeters alongside millimeters.
+function snowNum(cm) { return precipIn() ? (cm / 2.54).toFixed(1) : cm.toFixed(1); }
+function fSnow(cm, trace) { if (trace) return 'Trace'; return cm == null ? '—' : snowNum(cm) + (precipIn() ? ' in' : ' cm'); }
 // Snow leads the precipitation display on days with measurable snow (0.1 in / 0.25 cm or more).
 const snowy = day => day.snow && day.snow.v >= 0.25;
-function fPress(hpa, bare) { if (hpa == null) return '—'; return US() ? (hpa * 0.02953).toFixed(2) + (bare ? '' : ' inHg') : Math.round(hpa) + (bare ? '' : ' hPa'); }
-function fVis(m) { if (m == null) return '—'; return US() ? (m / 1609.34).toFixed(m < 16000 ? 1 : 0) + ' mi' : (m / 1000).toFixed(m < 10000 ? 1 : 0) + ' km'; }
+function fPress(hpa, bare) {
+  if (hpa == null) return '—';
+  const p = U().pressure, n = p === 'inHg' ? (hpa * 0.02953).toFixed(2) : p === 'mmHg' ? String(Math.round(hpa * 0.750062)) : String(Math.round(hpa));
+  return n + (bare ? '' : ' ' + p);
+}
+const isMi = () => U().distance === 'mi';
+function fVis(m) { if (m == null) return '—'; return isMi() ? (m / 1609.34).toFixed(m < 16000 ? 1 : 0) + ' mi' : (m / 1000).toFixed(m < 10000 ? 1 : 0) + ' km'; }
+function fDist(km) { return Math.round(isMi() ? km * 0.621371 : km) + (isMi() ? ' mi' : ' km'); }
 const compass = d => d == null ? '' : ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(d / 22.5) % 16];
 
 /* ---------- conditions ---------- */
@@ -833,6 +877,7 @@ function buildDay(date, c) {
   if (kind && kind !== 'fog' && !wet) kind = null;      // a stray model code on a dry day
   if (kind === 'fog' && hours.filter(h => h.kind === 'fog').length < 4) kind = null;
   if (!kind && wet) kind = (snow.v > 0 && snow.v * 10 >= pcpn.v * 0.5) ? 'snow' : 'rain';
+  if (snow.v >= 0.25 && kind !== 'storm') kind = 'snow';   // measured snow outranks a model rain code
   const label = kind === 'storm' ? 'Thunderstorms' : kind === 'snow' ? 'Snow' : kind === 'rain' ? (pcpn.v >= 12 ? 'Heavy Rain' : pcpn.v < 2.5 ? 'Light Rain' : 'Rain')
     : kind === 'fog' ? 'Fog' : (cloudWord(cloud) || WMO[code] || '—');
   return {
@@ -948,7 +993,7 @@ function scrollStrips(root) {
   });
 }
 function hourStrip(day, yday) {
-  const lbl = US() ? ['', '', '°F', 'in', 'mph', 'RH'] : ['', '', '°C', 'mm', 'm/s', 'RH'];
+  const lbl = ['', '', '°' + U().temp, unitLabel('precip'), unitLabel('wind'), 'RH'];
   const cells = day.hours.map(h => {
     const p = h.precip > 0 ? precipNum(h.precip) : '';
     const shownP = (p === '0.00' || p === '0.0') ? '' : p;
@@ -985,7 +1030,7 @@ function daySummary(day) {
 function drawMain() {
   const locs = allLocs();
   renderDots();
-  $('unitBtn').textContent = US() ? '°F' : '°C';
+  $('unitBtn').textContent = '°' + U().temp;
   const main = $('main');
   if (!locs.length) {
     $('sky').className = 'sky-partly';
@@ -1036,7 +1081,7 @@ function drawMain() {
 
   html += `<section class="card"><h3>${ICON.cal}10-Day History</h3><div class="days">` + d.days.slice().reverse().map(day => {
     const left = ((day.lo.v - allLo) / span) * 100, width = Math.max(4, ((day.hi.v - day.lo.v) / span) * 100);
-    const pc = snowy(day) ? `<small>${US() ? (day.snow.v / 2.54).toFixed(1) + '″' : day.snow.v.toFixed(1) + 'cm'}</small>`
+    const pc = snowy(day) ? `<small>${snowNum(day.snow.v) + (precipIn() ? '″' : 'cm')}</small>`
       : day.pcpn.v >= 0.25 || day.pcpn.trace ? `<small>${precipNum(day.pcpn.v, day.pcpn.trace)}</small>` : '';
     const open = S.open.has(day.date);
     return `<div class="day${open ? ' open' : ''}" data-date="${day.date}">
@@ -1087,7 +1132,7 @@ function dayFull(d, date) {
 function drawDetails(d) {
   const box = $('details'); if (!box) return;
   const date = S.sel && S.sel >= MIN_DATE && S.sel <= d.today ? S.sel : d.yday;
-  const token = date + '|' + S.units;
+  const token = date + '|' + JSON.stringify(S.units);
   box.dataset.token = token;
   const head = `<div class="dnav">
       <button type="button" class="dbtn" id="dPrev" aria-label="Previous day"${date <= MIN_DATE ? ' disabled' : ''}>‹</button>
@@ -1145,7 +1190,7 @@ function detailTiles(d, y, cl) {
       <tr><td>Coldest</td><td>${recCell(M.lo)}</td></tr>
       <tr><td>Wettest month</td><td>${recCell(M.pcpn, true)}</td></tr>
       </tbody></table>` : ''}
-      <div class="src">NOAA station: ${esc(c.name)}${c.state ? ', ' + esc(stateName(c.state)) : ''} (${Math.round(c.dist * (US() ? 0.621 : 1))} ${US() ? 'mi' : 'km'} away). Normals are 1991–2020; records cover the station’s full history.</div></section>`;
+      <div class="src">NOAA station: ${esc(c.name)}${c.state ? ', ' + esc(stateName(c.state)) : ''} (${fDist(c.dist)} away). Normals are 1991–2020; records cover the station’s full history.</div></section>`;
   } else {
     html += `<section class="card tile wide"><h3>Normals &amp; Records</h3><div class="note" style="padding:0">Normals and records come from NOAA and are available for US locations only.</div></section>`;
   }
@@ -1182,7 +1227,7 @@ function detailTiles(d, y, cl) {
   const pr = y.hours.filter(h => h.press != null), pd = pr.length > 1 ? pr[pr.length - 1].press - pr[0].press : null;
   const trend = pd == null ? '' : pd > 1 ? 'Rising' : pd < -1 ? 'Falling' : 'Steady';
   pair(`<section class="card tile"><h3>Humidity</h3><div class="val">${y.humAvg == null ? '—' : Math.round(y.humAvg) + '%'}</div><div class="sub">Average${so}</div><div class="note">Range ${y.humMin == null ? '—' : Math.round(y.humMin) + '–' + Math.round(y.humMax) + '%'}</div></section>`,
-    `<section class="card tile"><h3>Pressure</h3><div class="val">${fPress(y.pressAvg, true)}${y.pressAvg == null ? '' : `<span class="unit">${US() ? 'inHg' : 'hPa'}</span>`}</div><div class="sub">${trend ? trend + (trend === 'Rising' ? ' ↑' : trend === 'Falling' ? ' ↓' : '') : 'Average'}</div><div class="note">${pr.length ? `Average${so}; range ${fPress(y.pressMin, true)}–${fPress(y.pressMax)}` : na}</div></section>`);
+    `<section class="card tile"><h3>Pressure</h3><div class="val">${fPress(y.pressAvg, true)}${y.pressAvg == null ? '' : `<span class="unit">${U().pressure}</span>`}</div><div class="sub">${trend ? trend + (trend === 'Rising' ? ' ↑' : trend === 'Falling' ? ' ↓' : '') : 'Average'}</div><div class="note">${pr.length ? `Average${so}; range ${fPress(y.pressMin, true)}–${fPress(y.pressMax)}` : na}</div></section>`);
   // AQI
   if (y.aqi) {
     const lo = y.aqi.min, hi = y.aqi.max, cl2 = aqiCat(lo.v), ch = aqiCat(hi.v);
@@ -1316,7 +1361,7 @@ function closeSheet() {
 function drawSheet() {
   if (G.active && G.active.mode) { S.sheetDirty = true; return; } // don't redraw under a finger mid-gesture
   openSwipe = null;
-  $('segUS').classList.toggle('on', US()); $('segSI').classList.toggle('on', !US());
+  $('unitsSummary').textContent = unitSummary();
   $('editBtn').textContent = S.editing ? 'Cancel' : 'Edit';
   $('editBtn').hidden = !S.saved.length;
   const notice = $('notice');
@@ -1481,10 +1526,42 @@ function addLoc(r) {
 }
 
 /* ---------- controls ---------- */
-function setUnits(u) { S.units = u; store.set('yw.units', u); drawMain(); if (!$('sheet').hidden) drawSheet(); }
-$('unitBtn').onclick = () => setUnits(US() ? 'si' : 'us');
-$('segUS').onclick = () => setUnits('us');
-$('segSI').onclick = () => setUnits('si');
+/* ---------- units menu ---------- */
+function unitSummary() { return Object.keys(UNIT_OPTS).map(k => k === 'temp' ? '°' + U().temp : unitLabel(k)).join(' · '); }
+function setUnits(patch) {
+  S.units = Object.assign({}, S.units, patch); store.set('yw.unitset', S.units);
+  drawMain(); if (!$('sheet').hidden) drawSheet(); drawUnitsMenu();
+}
+function drawUnitsMenu() {
+  const pop = $('unitsPop'); if (!pop || pop.hidden) return;
+  const preset = Object.keys(UNIT_PRESETS).find(p => Object.keys(UNIT_OPTS).every(k => UNIT_PRESETS[p][k] === U()[k]));
+  pop.innerHTML = `<div class="units-panel" role="dialog" aria-label="Units">
+    <div class="units-row"><span>Presets</span><div class="seg">
+      <button type="button" data-preset="us" class="${preset === 'us' ? 'on' : ''}">US</button>
+      <button type="button" data-preset="si" class="${preset === 'si' ? 'on' : ''}">SI</button></div></div>`
+    + Object.keys(UNIT_OPTS).map(k => `<div class="units-row"><span>${UNIT_OPTS[k].label}</span><div class="seg" role="group" aria-label="${UNIT_OPTS[k].label}">`
+      + UNIT_OPTS[k].opts.map(([v, l]) => `<button type="button" data-k="${k}" data-v="${v}" class="${U()[k] === v ? 'on' : ''}" aria-pressed="${U()[k] === v}">${l}</button>`).join('')
+      + `</div></div>`).join('')
+    + `<button type="button" class="units-done" id="unitsDone">Done</button></div>`;
+}
+function openUnits() {
+  let pop = $('unitsPop');
+  if (!pop) {
+    pop = document.createElement('div'); pop.id = 'unitsPop'; pop.className = 'units-pop';
+    pop.addEventListener('click', e => {
+      if (e.target === pop || e.target.id === 'unitsDone') { closeUnits(); return; }
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.preset) setUnits(UNIT_PRESETS[b.dataset.preset]);
+      else if (b.dataset.k) setUnits({ [b.dataset.k]: b.dataset.v });
+    });
+    document.body.appendChild(pop);
+  }
+  pop.hidden = false; drawUnitsMenu();
+  const on = pop.querySelector('button.on'); if (on) on.focus();
+}
+function closeUnits() { const pop = $('unitsPop'); if (pop && !pop.hidden) { pop.hidden = true; $('unitBtn').focus(); } }
+$('unitBtn').onclick = openUnits;
+$('unitsOpen').onclick = openUnits;
 $('listBtn').onclick = () => openSheet(false);
 $('doneBtn').onclick = closeSheet;
 $('editBtn').onclick = () => { S.editing = !S.editing; drawSheet(); };
@@ -1497,7 +1574,8 @@ $('main').addEventListener('click', e => {
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   const cw = $('calWrap');
-  if (cw && !cw.hidden) closeCal(); else if (!$('sheet').hidden) closeSheet();
+  const up = $('unitsPop');
+  if (up && !up.hidden) closeUnits(); else if (cw && !cw.hidden) closeCal(); else if (!$('sheet').hidden) closeSheet();
 });
 
 // Horizontal swipe between locations (ignored when the swipe starts inside a scrolling hour strip)
