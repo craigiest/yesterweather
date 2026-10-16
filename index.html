@@ -1528,7 +1528,7 @@ function addLoc(r) {
 
 /* ---------- controls ---------- */
 /* ---------- units menu ---------- */
-function unitSummary() { return Object.keys(UNIT_OPTS).map(k => k === 'temp' ? '°' + U().temp : unitLabel(k)).join(' · '); }
+function unitSummary() { return '°' + U().temp; }
 function setUnits(patch) {
   S.units = Object.assign({}, S.units, patch); store.set('yw.unitset', S.units);
   drawMain(); if (!$('sheet').hidden) drawSheet(); drawUnitsMenu();
