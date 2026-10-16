@@ -159,7 +159,10 @@ table.climo td small { display: block; font-size: 11px; color: var(--fg-dim); }
 @media (max-width: 380px) { .moon { grid-template-columns: auto 1fr; } .moon .times { grid-column: 1 / -1; } }
 
 /* Day details navigation */
-#details { display: flex; flex-direction: column; gap: 12px; scroll-margin-top: calc(env(safe-area-inset-top, 0px) + 12px); }
+#details, .dbody { display: flex; flex-direction: column; gap: 12px; }
+.dbody.pending .card > :not(h3), .dbody.pending > .src { visibility: hidden; }
+.dbody.pending .card { animation: pulse 1.4s ease-in-out infinite; }
+#details { scroll-margin-top: calc(env(safe-area-inset-top, 0px) + 12px); }
 .dnav { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 .dbtn {
   position: relative; flex: none; width: 40px; height: 40px; border-radius: 50%;
@@ -377,7 +380,9 @@ function precipNum(mm, trace) {
   return US() ? (mm / 25.4).toFixed(2) : mm.toFixed(1);
 }
 function fP(mm, trace) { const n = precipNum(mm, trace); return (n === 'Trace' || n === '—') ? n : n + (US() ? ' in' : ' mm'); }
-function fSnow(cm) { return cm == null ? '—' : (US() ? (cm / 2.54).toFixed(1) + ' in' : cm.toFixed(1) + ' cm'); }
+function fSnow(cm, trace) { if (trace) return 'Trace'; return cm == null ? '—' : (US() ? (cm / 2.54).toFixed(1) + ' in' : cm.toFixed(1) + ' cm'); }
+// Snow leads the precipitation display on days with measurable snow (0.1 in / 0.25 cm or more).
+const snowy = day => day.snow && day.snow.v >= 0.25;
 function fPress(hpa, bare) { if (hpa == null) return '—'; return US() ? (hpa * 0.02953).toFixed(2) + (bare ? '' : ' inHg') : Math.round(hpa) + (bare ? '' : ' hPa'); }
 function fVis(m) { if (m == null) return '—'; return US() ? (m / 1609.34).toFixed(m < 16000 ? 1 : 0) + ' mi' : (m / 1000).toFixed(m < 10000 ? 1 : 0) + ' km'; }
 const compass = d => d == null ? '' : ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(d / 22.5) % 16];
@@ -979,7 +984,7 @@ function drawMain() {
     <div class="big">${fT(y.hi.v)}</div>
     <div class="biglabel">High</div>
     <div class="cond">${esc(y.label)}</div>
-    <div class="stats"><span>Low ${fT(y.lo.v)}</span><span>${y.snow.v > 0 ? 'Snow ' + fSnow(y.snow.v) + ' · ' : ''}Precip ${fP(y.pcpn.v, y.pcpn.trace)}</span></div>
+    <div class="stats"><span>Low ${fT(y.lo.v)}</span><span>${snowy(y) ? `Snow ${fSnow(y.snow.v)} (${fP(y.pcpn.v, y.pcpn.trace)} melted)` : `Precip ${fP(y.pcpn.v, y.pcpn.trace)}`}</span></div>
     <div class="stats"><span>Cloud cover ${y.cloud == null ? '—' : Math.round(y.cloud) + '%'}</span></div>
   </section>`;
 
@@ -987,7 +992,8 @@ function drawMain() {
 
   html += `<section class="card"><h3>${ICON.cal}10-Day History</h3><div class="days">` + d.days.slice().reverse().map(day => {
     const left = ((day.lo.v - allLo) / span) * 100, width = Math.max(4, ((day.hi.v - day.lo.v) / span) * 100);
-    const pc = day.pcpn.v >= 0.25 || day.pcpn.trace ? `<small>${precipNum(day.pcpn.v, day.pcpn.trace)}</small>` : '';
+    const pc = snowy(day) ? `<small>${US() ? (day.snow.v / 2.54).toFixed(1) + '″' : day.snow.v.toFixed(1) + 'cm'}</small>`
+      : day.pcpn.v >= 0.25 || day.pcpn.trace ? `<small>${precipNum(day.pcpn.v, day.pcpn.trace)}</small>` : '';
     const open = S.open.has(day.date);
     return `<div class="day${open ? ' open' : ''}" data-date="${day.date}">
       <button type="button" class="day-row" aria-expanded="${open}">
@@ -1055,13 +1061,20 @@ function drawDetails(d) {
     pick.onclick = () => { try { pick.showPicker(); } catch (e) {} };
     pick.onchange = () => { const v = pick.value; if (/^\d{4}-\d{2}-\d{2}$/.test(v) && v >= MIN_DATE && v <= d.today) set(v); };
   };
-  if (box.dataset.shown !== token) { box.innerHTML = head + '<div class="card msg loading">Loading…</div>'; wire(); }
+  // Keep the current tiles in place (contents hidden) while another day loads, so the page doesn't jump.
+  if (!box.firstElementChild) box.innerHTML = '<div class="dnav-slot"></div><div class="dbody"></div>';
+  const body = box.lastElementChild;
+  box.firstElementChild.innerHTML = head; wire();
+  if (box.dataset.shown !== token) {
+    if (body.querySelector('.tiles')) body.classList.add('pending');
+    else body.innerHTML = '<div class="card msg loading">Loading…</div>';
+  }
   Promise.all([dayFor(d, date), climoFor(d, date)]).then(([day, cl]) => {
     if (box.dataset.token !== token || !box.isConnected) return;
-    box.innerHTML = head + detailTiles(d, day, cl); box.dataset.shown = token; wire();
+    body.innerHTML = detailTiles(d, day, cl); body.classList.remove('pending'); box.dataset.shown = token;
   }, e => {
     if (box.dataset.token !== token || !box.isConnected) return;
-    box.innerHTML = head + `<div class="card msg">${esc(e.message)}</div>`; box.dataset.shown = ''; wire();
+    body.innerHTML = `<div class="card msg">${esc(e.message)}</div>`; body.classList.remove('pending'); box.dataset.shown = '';
   });
 }
 
@@ -1121,7 +1134,8 @@ function detailTiles(d, y, cl) {
     `<section class="card tile"><h3>Cloud Cover</h3><div class="val">${y.cloud == null ? '—' : Math.round(y.cloud) + '%'}</div><div class="sub">${cloudWord(y.cloud) || '—'}</div><div class="note">Average${so}; hourly range ${cloudRange(clouds)}</div></section>`);
   // Wind + precipitation
   pair(`<section class="card tile"><h3>Wind</h3><div class="val">${fW(y.windMax)}</div><div class="sub">Strongest sustained</div><div class="note">${y.gustMax == null ? 'No gusts reported' : 'Gusts up to ' + fW(y.gustMax)}</div></section>`,
-    `<section class="card tile"><h3>Precipitation</h3><div class="val">${fP(y.pcpn.v, y.pcpn.trace)}</div><div class="sub">${y.snow.v > 0 ? 'Snow ' + fSnow(y.snow.v) : (y.partial ? 'So far today' : 'Total for the day')}</div><div class="note">Measured as liquid water; melted snow is included.</div></section>`);
+    (snowy(y) ? `<section class="card tile"><h3>Snowfall</h3><div class="val">${fSnow(y.snow.v)}</div><div class="sub">${fP(y.pcpn.v, y.pcpn.trace)} melted</div><div class="note">${y.partial ? 'So far today' : 'Total for the day'}</div></section>`
+      : `<section class="card tile"><h3>Precipitation</h3><div class="val">${fP(y.pcpn.v, y.pcpn.trace)}</div><div class="sub">${y.partial ? 'So far today' : 'Total for the day'}</div>${y.snow.trace ? '<div class="note">Trace of snow</div>' : ''}</section>`));
   // Humidity + pressure
   const pr = y.hours.filter(h => h.press != null), pd = pr.length > 1 ? pr[pr.length - 1].press - pr[0].press : null;
   const trend = pd == null ? '' : pd > 1 ? 'Rising' : pd < -1 ? 'Falling' : 'Steady';
@@ -1151,8 +1165,8 @@ function dayDetail(day, d) {
   const n = day.normal, f = [], so = day.partial ? ' so far' : '';
   f.push(`<span>High${so} <b>${fT(day.hi.v)}</b> · Low <b>${fT(day.lo.v)}</b></span>`);
   if (n) f.push(`<span>Normal <b>${fT(n.hi)}</b> / <b>${fT(n.lo)}</b></span>`);
-  f.push(`<span>Precip${so} <b>${fP(day.pcpn.v, day.pcpn.trace)}</b></span>`);
-  if (day.snow.v > 0) f.push(`<span>Snow <b>${fSnow(day.snow.v)}</b></span>`);
+  if (snowy(day)) f.push(`<span>Snow${so} <b>${fSnow(day.snow.v)}</b> (${fP(day.pcpn.v, day.pcpn.trace)} melted)</span>`);
+  else f.push(`<span>Precip${so} <b>${fP(day.pcpn.v, day.pcpn.trace)}</b></span>`);
   f.push(`<span>Cloud cover <b>${day.cloud == null ? '—' : Math.round(day.cloud) + '%'}</b></span>`);
   if (day.aqi) f.push(`<span>AQI <b>${Math.round(day.aqi.min.v)}–${Math.round(day.aqi.max.v)}</b></span>`);
   f.push(`<span>UV <b>${day.uv == null ? '—' : Math.round(day.uv)}</b></span>`);
