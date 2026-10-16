@@ -1,6 +1,6 @@
 # Yesterweather
 
-A mobile web app in the style of the iOS Weather app that shows **yesterday's** weather: high/low, precipitation and cloud cover, an hour-by-hour record, a 10-day history with expandable hourly detail, and air quality, normals, records, sunrise/sunset, UV index and visibility.
+A mobile web app in the style of the iOS Weather app that shows **yesterday's** weather: high/low, precipitation and cloud cover, an hour-by-hour record, a 10-day history (starting with today so far) with expandable hourly detail, and a day-details section that can step through or jump to any date: normals and records, all-time monthly records, sunrise/sunset, UV index, visibility, wind, humidity and air quality.
 
 Everything is in `index.html`. No build step and no API keys.
 
@@ -10,7 +10,8 @@ Everything is in `index.html`. No build step and no API keys.
 | --- | --- | --- |
 | Daily high, low, precipitation, snow | NOAA ACIS, nearest first-order/ASOS station | Open-Meteo |
 | Hourly temperature, wind, humidity, visibility, clouds | NWS `api.weather.gov` station observations | Open-Meteo |
-| Normals (1991–2020) and daily records | NOAA ACIS | none (US only) |
+| Normals (1991–2020), daily records and all-time monthly records | NOAA ACIS | none (US only) |
+| Any past date (calendar), back to 1940 | NOAA ACIS for daily values | Open-Meteo forecast API (last ~3 months) or ERA5 archive |
 | US AQI, UV index, sunrise/sunset, condition codes | Open-Meteo | none |
 | Place search | Open-Meteo geocoding | none |
 
